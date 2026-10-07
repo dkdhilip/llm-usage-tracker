@@ -16,6 +16,11 @@ _KEY_PREFIX_LEN = 11  # "vk_" + 8 chars
 
 SESSION_COOKIE = "llmt_session"
 
+# CSRF (see app/csrf.py): a readable cookie carries the per-session token; the SPA
+# echoes it back in a header on every unsafe request.
+CSRF_COOKIE = "csrf_token"
+CSRF_HEADER = "X-CSRF-Token"
+
 # scrypt params — ~16 MB, fine for a login form.
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1, "maxmem": 64 * 1024 * 1024}
 
@@ -84,6 +89,24 @@ def read_session(cookie: str) -> int | None:
     if not (uid.isdigit() and exp.isdigit()) or int(exp) < int(time.time()):
         return None
     return int(uid)
+
+
+# ---- CSRF token (stateless; bound to the session cookie) ----
+def csrf_token_for(session_cookie: str) -> str:
+    """The CSRF token for one session: HMAC(SECRET_KEY, "csrf|" + session cookie).
+    Bound to the exact session cookie value, so a token minted for one session is
+    useless against another, and an attacker who cannot read the victim's session
+    cookie cannot compute it. The "csrf|" prefix domain-separates it from the
+    session signature and the virtual-key hash, which share SECRET_KEY."""
+    mac = hmac.new(settings.SECRET_KEY.encode(), b"csrf|" + session_cookie.encode(), hashlib.sha256)
+    return _b64(mac.digest())
+
+
+def csrf_valid(session_cookie: str, presented: str) -> bool:
+    """Constant-time check of a presented token against the session's expected one."""
+    if not session_cookie or not presented:
+        return False
+    return hmac.compare_digest(presented.encode(), csrf_token_for(session_cookie).encode())
 
 
 # ---- principal resolution ----

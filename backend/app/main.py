@@ -9,6 +9,7 @@ from starlette.types import Scope
 
 from app import idempotency, providers, ratelimit
 from app.config import settings
+from app.csrf import CSRFMiddleware
 from app.db import Base, SessionLocal, engine
 from app.gateway import UpstreamHTTPError
 from app.idempotency import IdempotencyReplay
@@ -67,6 +68,10 @@ app = FastAPI(
     version=settings.VERSION,
     lifespan=lifespan,
 )
+
+# Registered before CORS on purpose: the last-added middleware is outermost, so CORS
+# still wraps (and decorates) a CSRF rejection in cross-origin dev.
+app.add_middleware(CSRFMiddleware)
 
 if settings.cors_origins_list:
     app.add_middleware(

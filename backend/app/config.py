@@ -1,5 +1,3 @@
-import warnings
-
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,9 +40,9 @@ class Settings(BaseSettings):
     LIVE_CAP_DEFAULT_USD: float = 5.0
 
     # ---- provider-credential encryption ----
-    # A urlsafe-base64 32-byte Fernet key. Empty => derived from SECRET_KEY (a
-    # deployed environment should set this explicitly so rotating SECRET_KEY does
-    # not orphan stored provider keys).
+    # A urlsafe-base64 32-byte Fernet key. REQUIRED when ENVIRONMENT is deployed
+    # (production/prod/staging) — the app refuses to start without it. Empty is
+    # allowed only in development/test, where it is derived from SECRET_KEY.
     ENCRYPTION_KEY: str = ""
 
     # Postgres. Render/Neon hand out `postgres://` or `postgresql://`; `sqlalchemy_url`
@@ -109,16 +107,16 @@ class Settings(BaseSettings):
         errors = []
         if self.SECRET_KEY == _DEV_SECRET_KEY:
             errors.append("SECRET_KEY is still the built-in development default")
+        if not self.ENCRYPTION_KEY.strip():
+            # No silent derivation from SECRET_KEY in a deployed env: rotating
+            # SECRET_KEY would then orphan every stored provider credential.
+            errors.append(
+                "ENCRYPTION_KEY is required (a Fernet key: urlsafe-base64, 32 bytes) — "
+                "it must not be derived from SECRET_KEY outside development"
+            )
         if errors:
             raise ValueError(
                 f"ENVIRONMENT={self.ENVIRONMENT!r}: " + "; ".join(errors)
-            )
-        if not self.ENCRYPTION_KEY:
-            warnings.warn(
-                "ENCRYPTION_KEY is not set — encryption falls back to a key derived "
-                "from SECRET_KEY. Set ENCRYPTION_KEY explicitly so rotating "
-                "SECRET_KEY does not orphan stored provider keys.",
-                stacklevel=2,
             )
         return self
 

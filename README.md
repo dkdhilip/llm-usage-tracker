@@ -194,11 +194,13 @@ curl -s -o /dev/null -w '%{http_code}\n' $BASE/api/usage/summary
 # sign up + create a workspace (cookie jar carries the session)
 curl -sc $J -X POST $BASE/api/auth/signup -H 'Content-Type: application/json' \
   -d '{"username":"smoke","password":"pw-abcdefgh"}' >/dev/null
+# cookie-authenticated writes under /api must echo the csrf_token cookie (see "CSRF" under API)
+CSRF=$(awk '$6=="csrf_token"{print $7}' $J)
 curl -sb $J -c $J -X POST $BASE/api/workspace -H 'Content-Type: application/json' \
-  -d '{"name":"Smoke Co"}' >/dev/null
+  -H "X-CSRF-Token: $CSRF" -d '{"name":"Smoke Co"}' >/dev/null
 # create a key scoped to openai + openrouter (allow_live on)
 KEY=$(curl -sb $J -X POST $BASE/api/keys -H 'Content-Type: application/json' \
-  -d '{"label":"smoke","allowed_providers":["openai","openrouter"],"allow_live":true}' \
+  -H "X-CSRF-Token: $CSRF" -d '{"label":"smoke","allowed_providers":["openai","openrouter"],"allow_live":true}' \
   | python -c 'import sys,json;print(json.load(sys.stdin)["key"])')
 # no provider key attached for openai -> 402 provider_not_configured
 curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE/v1/proxy/chat \
@@ -294,11 +296,11 @@ are deliberately out of scope for now.)
 
 | Var | Default | Purpose |
 |---|---|---|
-| `ENVIRONMENT` | `development` | Set to `production` (or `staging`) on a deployed host. The app then **refuses to start** on the dev-default `SECRET_KEY`, and warns if `ENCRYPTION_KEY` is left to derive from it. |
+| `ENVIRONMENT` | `development` | Set to `production` (or `staging`) on a deployed host. The app then **refuses to start** on the dev-default `SECRET_KEY` or without an `ENCRYPTION_KEY`. |
 | `DATABASE_URL` | local compose value | Postgres. `postgres://` / `postgresql://` auto-rewritten to the psycopg3 driver. |
 | `REDIS_URL` | `""` | Atomic, distributed rate limiting (`app/ratelimit.py`). Empty ⇒ every check uses the in-process fallback directly (a behavioral no-op vs. the pre-migration implementation). See "Reliability" below. |
 | `SECRET_KEY` | `dev-secret` | HMAC pepper for virtual-key hashing **and** session-cookie signing. Must be overridden when `ENVIRONMENT` is deployed. |
-| `ENCRYPTION_KEY` | `""` | Fernet key (urlsafe-base64, 32 bytes) encrypting each workspace's stored provider keys. Empty ⇒ derived from `SECRET_KEY`; set explicitly on a deployed host. |
+| `ENCRYPTION_KEY` | `""` | Fernet key (urlsafe-base64, 32 bytes) encrypting each workspace's stored provider keys. **Required when `ENVIRONMENT` is deployed** (`production`/`prod`/`staging`) — startup fails without it, so it can never silently derive from `SECRET_KEY` (rotating that would orphan every stored credential). Empty is allowed only in development/test, where it is derived from `SECRET_KEY`. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 | `SESSION_TTL_HOURS` | `168` | Session-cookie lifetime. |
 | `ALLOW_SIGNUP` | `true` | Whether new accounts can be created. |
 | `MAX_USERS` | `300` | Signup refused past this many accounts (whole instance). |
@@ -332,6 +334,15 @@ are deliberately out of scope for now.)
 Auth = a valid session cookie (`POST /api/auth/{signup,login}`). "member" = any user in a
 workspace; "admin" = the Workspace Admin. Endpoints marked *member* also need workspace
 membership (`403` if signed in but not in one).
+
+**CSRF.** The browser UI authenticates with a session cookie, so every *unsafe* request
+(`POST`/`PUT`/`PATCH`/`DELETE`) under `/api/*` must also carry an `X-CSRF-Token` header equal to the
+`csrf_token` cookie the server sets at signup/login (and re-issues on `GET /api/auth/me`); a missing
+or wrong token is `403`. The token is an HMAC of the session cookie, so it is bound to that one
+session. `GET`s, `/api/auth/login` + `/signup` (no session yet), and the whole virtual-key API
+(`/v1/*`, `/v1beta/*` — header-authenticated, never cookie-authenticated) are not subject to it.
+`SameSite=Lax` and `HttpOnly` on the session cookie are unchanged; `csrf_token` is intentionally
+script-readable (the SPA echoes it) but is otherwise `Lax`/`Secure` like the session cookie.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|

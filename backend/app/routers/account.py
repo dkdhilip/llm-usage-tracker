@@ -10,7 +10,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import User, Workspace
 from app.schemas import AccountOut, WorkspaceRef
-from app.security import SESSION_COOKIE, require_user
+from app.security import CSRF_COOKIE, SESSION_COOKIE, require_user
 
 router = APIRouter(prefix="/api/account", tags=["account"])
 
@@ -54,4 +54,5 @@ def delete_my_account(
     db.delete(user)
     db.commit()
     resp.delete_cookie(SESSION_COOKIE, path="/")
+    resp.delete_cookie(CSRF_COOKIE, path="/")
     return {"deleted": True}

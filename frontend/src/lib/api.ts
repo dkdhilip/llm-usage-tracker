@@ -1,10 +1,26 @@
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
+// CSRF: the server sets a readable `csrf_token` cookie next to the (HttpOnly)
+// session cookie; every unsafe request must echo it back in X-CSRF-Token. Safe
+// methods need nothing. See backend/app/csrf.py.
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+export function csrfToken(): string | null {
+  const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const token = SAFE_METHODS.has(method) ? null : csrfToken();
   const res = await fetch(BASE + path, {
     ...init,
     credentials: "include", // carry the session cookie
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "X-CSRF-Token": token } : {}),
+      ...(init.headers ?? {}),
+    },
   });
   if (!res.ok) {
     let detail: unknown = res.statusText;

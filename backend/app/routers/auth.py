@@ -1,7 +1,7 @@
 """Auth: signup + login, session cookie, logout, and `/me`. Username + password —
 no email, no password reset yet."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,7 +11,9 @@ from app.config import settings
 from app.db import get_db
 from app.models import User, Workspace
 from app.security import (
+    CSRF_COOKIE,
     SESSION_COOKIE,
+    csrf_token_for,
     current_user,
     hash_password,
     issue_session,
@@ -34,16 +36,33 @@ class LoginBody(BaseModel):
     password: str
 
 
+def _set_csrf_cookie(resp: Response, session_cookie: str) -> None:
+    """The CSRF token cookie (see app/csrf.py). Deliberately NOT HttpOnly — the SPA
+    must read it to echo it in X-CSRF-Token — but otherwise held to the session
+    cookie's standard: same lifetime, SameSite=Lax, Secure outside development."""
+    resp.set_cookie(
+        CSRF_COOKIE,
+        csrf_token_for(session_cookie),
+        max_age=settings.SESSION_TTL_HOURS * 3600,
+        httponly=False,
+        samesite="lax",
+        secure=settings.ENVIRONMENT.strip().lower() != "development",
+        path="/",
+    )
+
+
 def _set_cookie(resp: Response, user_id: int) -> None:
+    session = issue_session(user_id)
     resp.set_cookie(
         SESSION_COOKIE,
-        issue_session(user_id),
+        session,
         max_age=settings.SESSION_TTL_HOURS * 3600,
         httponly=True,
         samesite="lax",
         secure=settings.ENVIRONMENT.strip().lower() != "development",
         path="/",
     )
+    _set_csrf_cookie(resp, session)
 
 
 def _me(db: Session, user: User | None) -> dict:
@@ -107,11 +126,20 @@ def login(body: LoginBody, resp: Response, db: Session = Depends(get_db)) -> dic
 @router.post("/logout")
 def logout(resp: Response) -> dict:
     resp.delete_cookie(SESSION_COOKIE, path="/")
+    resp.delete_cookie(CSRF_COOKIE, path="/")
     return {"authenticated": False, "user": None}
 
 
 @router.get("/me")
 def me(
-    user: User | None = Depends(current_user), db: Session = Depends(get_db)
+    resp: Response,
+    user: User | None = Depends(current_user),
+    session: str = Cookie(default="", alias=SESSION_COOKIE),
+    db: Session = Depends(get_db),
 ) -> dict:
+    if user is not None and session:
+        # (Re)issue the CSRF cookie for an already-valid session. This is how a
+        # session that predates CSRF protection (no csrf_token cookie yet) picks
+        # one up on the SPA's first /me call, without forcing a re-login.
+        _set_csrf_cookie(resp, session)
     return _me(db, user)

@@ -61,6 +61,24 @@ from app.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+class CsrfAwareClient(TestClient):
+    """A TestClient that behaves like the SPA (frontend/src/lib/api.ts): it echoes
+    the `csrf_token` cookie into an `X-CSRF-Token` header on every unsafe request.
+    All the shared fixtures use it, so the whole suite exercises cookie-authenticated
+    mutations with CSRF protection ON, exactly as the browser does. Tests that need
+    to control the header themselves (tests/test_csrf.py) use a plain TestClient."""
+
+    def request(self, method, url, **kwargs):
+        if method.upper() not in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+            headers = dict(kwargs.get("headers") or {})
+            if not any(k.lower() == "x-csrf-token" for k in headers):
+                token = self.cookies.get("csrf_token")
+                if token:
+                    headers["X-CSRF-Token"] = token
+            kwargs["headers"] = headers
+        return super().request(method, url, **kwargs)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _schema():
     Base.metadata.drop_all(bind=engine)
@@ -350,7 +368,7 @@ def _signup(c: TestClient, username: str, password: str = "pw-abcdefgh") -> dict
 
 @pytest.fixture()
 def client():
-    with TestClient(app) as c:
+    with CsrfAwareClient(app) as c:
         yield c
 
 
@@ -361,7 +379,7 @@ def signup():
 
     def _make(username: str | None = None, password: str = "pw-abcdefgh") -> tuple:
         n["i"] += 1
-        c = TestClient(app)
+        c = CsrfAwareClient(app)
         user = _signup(c, username or f"user{n['i']}", password)
         return c, user
 
@@ -375,7 +393,7 @@ def new_admin():
 
     def _make(ws_name: str | None = None) -> tuple:
         n["i"] += 1
-        c = TestClient(app)
+        c = CsrfAwareClient(app)
         _signup(c, f"admin{n['i']}")
         r = c.post("/api/workspace", json={"name": ws_name or f"ws{n['i']}"})
         assert r.status_code == 200, r.text
@@ -400,7 +418,7 @@ def new_member():
         n["i"] += 1
         inv = admin_c.post("/api/workspace/invites", json={}).json()
         assert "code" in inv, inv
-        c = TestClient(app)
+        c = CsrfAwareClient(app)
         _signup(c, username or f"member{n['i']}")
         r = c.post("/api/workspace/join", json={"code": inv["code"]})
         assert r.status_code == 200, r.text
