@@ -317,6 +317,8 @@ are deliberately out of scope for now.)
 | `ALLOW_LIVE_KEYS` | `true` | Let a Workspace Admin attach the workspace's own provider key. |
 | `LIVE_CAP_DEFAULT_USD` | `5` | Default monthly live-spend cap for a provider with no explicit cap. Any non-negative per-provider value, no ceiling. |
 | `CORS_ORIGINS` | `""` | Comma-separated origins; local dev only. |
+| `GATEWAY_PUBLIC_URL` | `https://llm-usage-tracker-97q0.onrender.com` | The hosted gateway **root** shown in the dashboard's "Connect your app" guide (`GET /api/integration`) — the one place this URL is configured. A trailing `/v1` is tolerated. |
+| `GATEWAY_LOCAL_URL` | `http://127.0.0.1:8000` | The local gateway root offered in the same guide. |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `GEMINI_API_KEY` | `""` | Instance-wide provider creds — configure a provider for every workspace. Always win over a workspace's attached key. Never shown in the UI. With none set, a request `402`s until its workspace attaches a key. Gemini uses Google's OpenAI-compatible endpoint. |
 | `PROVIDER_CHECK_TTL` | `300` | Seconds to cache a provider liveness check. |
 | `RENDER_GIT_COMMIT` | `""` | Deployed commit SHA, **set automatically by Render** at runtime (Docker included). Surfaced at `GET /version` for drift detection; leave unset locally ⇒ `commit: null`. Never set this by hand. |
@@ -363,6 +365,7 @@ script-readable (the SPA echoes it) but is otherwise `Lax`/`Secure` like the ses
 | GET `\|` PUT | `/api/workspace/pricing` | admin | list this workspace's price overrides / upsert one `{provider, model, input_per_1m, output_per_1m}` → `409` past `MAX_MODEL_PRICING_PER_WORKSPACE` |
 | DELETE | `/api/workspace/pricing/{id}` | admin | remove an override — `404` if it isn't this workspace's |
 | GET | `/api/providers` | admin | `[{provider, env_var, configured_via_env}]` — instance-wide env-var status only |
+| GET | `/api/integration?target=hosted\|local` | member | copy-ready, per-provider setup (URLs, env vars, code) for OpenAI / Anthropic / Gemini — placeholder `vk_...` only, never a key |
 | POST | `/api/keys` | admin | `{label, allowed_providers[], allow_live?, default_provider?, assigned_user_id?, monthly_budget_usd?, budget_period?(day\|week\|month\|custom), budget_start?, budget_end?, expires_at?, allowed_models?{provider:[model]}}` → raw key once |
 | GET | `/api/keys` | member | admin → every key in the workspace (+ `assigned_username`); member → only keys assigned to them |
 | PATCH `\|` DELETE | `/api/keys/{id}` | admin | patch (budget, `allow_live`, `assigned_user_id`/`clear_assignment`) / revoke |
@@ -397,6 +400,35 @@ own — point it at `/v1beta/models/{image-capable-model}:generateContent` with
 `generationConfig.responseModalities` set, exactly like any other `generateContent` call; the
 gateway never inspects the response beyond pulling out token counts for logging, so an inline
 image part rides through exactly like an inline text part always has.
+
+### Connect an app (developer setup)
+
+A **virtual key does not redirect an SDK by itself**: the application must be pointed at the gateway
+(environment variables, a client option, or a shared helper). Pick the form for your SDK — they differ,
+and the wrong one double-prefixes the path (measured against the official SDKs):
+
+| SDK | Key variable | Base-URL variable | Base URL to use | Endpoint it hits |
+|---|---|---|---|---|
+| OpenAI (`openai`) | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | gateway root **+ `/v1`** | `POST /v1/chat/completions` |
+| Anthropic (`anthropic`) | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | the gateway **root** (no `/v1` — the SDK adds `/v1/messages`) | `POST /v1/messages` |
+| Gemini (`google-genai`) | `GEMINI_API_KEY` | `GOOGLE_GEMINI_BASE_URL` | the gateway **root** (no `/v1beta`) | `POST /v1beta/models/<model>:generateContent` |
+
+Hosted gateway root: `https://llm-usage-tracker-97q0.onrender.com` (OpenAI base URL: `…/v1`); local:
+`http://127.0.0.1:8000`. The dashboard's **Workspace → Create a virtual key** shows these, with copy-ready
+code, right after a key is created, and **Connect** on any live key row reopens them with a readiness
+checklist (provider enabled, live on, workspace credential present). Snippets only ever contain the
+placeholder `vk_...` — a key is shown once and never stored.
+
+Never put a real provider key in an application — real credentials belong in the gateway workspace. Mind
+the ambient environment (all measured): a real `OPENAI_API_KEY` already set on a machine beats a `.env`; a
+bare `load_dotenv(override=True)` walks up parent directories and can load an unrelated parent `.env`; a
+missing base URL makes an SDK fall back to the provider's own host (sending your virtual key there); and in
+the Gemini SDK `GOOGLE_API_KEY` silently overrides `GEMINI_API_KEY`. The dashboard's snippets therefore load
+only the project's own `.env`, pass the key and base URL explicitly, and raise an error if either is
+missing. The shared helper in [`examples/gateway-sdks/`](examples/gateway-sdks/README.md) does the same:
+one `LLM_GATEWAY_KEY` in the project's `.env`, rotated by editing that one line, with `LLM_GATEWAY_URL` to
+switch between local and hosted. Tested SDK minimums: `openai` 3.29.0, `anthropic` 1.13.0, `google-genai`
+2.30.0, `python-dotenv` 1.2.3.
 
 ### Example integrations
 
