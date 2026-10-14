@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     # Comma-separated origins for local dev (Vite on :5173). Empty in prod (same origin).
     CORS_ORIGINS: str = ""
 
+    # ---- developer-integration guide (GET /api/integration, app/integration.py) ----
+    # The single place the gateway URLs shown to developers come from. Give the gateway ROOT (no
+    # /v1): the OpenAI SDK needs root + /v1, while the Anthropic and Gemini SDKs append their own
+    # path and need the root itself — app.integration derives each form. A trailing /v1 here is
+    # tolerated and stripped. Override per deployment without a code change.
+    GATEWAY_PUBLIC_URL: str = "https://llm-usage-tracker-97q0.onrender.com"
+    GATEWAY_LOCAL_URL: str = "http://127.0.0.1:8000"
+
     # ---- provider credentials (server-side; a workspace key can also be attached in-app) ----
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""

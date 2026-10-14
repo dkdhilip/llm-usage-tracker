@@ -20,6 +20,7 @@ from app.routers import (
     embeddings,
     gemini,
     images,
+    integration,
     keys,
     messages,
     openai_compat,
@@ -135,6 +136,7 @@ app.include_router(auth.router)
 app.include_router(account.router)
 app.include_router(workspace.router)
 app.include_router(keys.router)
+app.include_router(integration.router)
 app.include_router(proxy.router)
 app.include_router(openai_compat.router)
 app.include_router(messages.router)
