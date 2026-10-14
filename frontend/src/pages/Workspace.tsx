@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
   api,
@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
+import { IntegrationGuide } from "../components/IntegrationGuide";
 import { num, relTime, usd } from "../lib/format";
 
 // ---------- provider keys + caps ----------
@@ -749,6 +750,15 @@ function CreateKeyForm({
             </div>
           </div>
         )}
+
+        {created && (
+          // Only what the readiness checklist needs — the plaintext key never enters the guide.
+          <IntegrationGuide
+            key={created.id} // a new key starts the guide afresh (provider tab, hosted/local choice)
+            keyInfo={{ allowed_providers: created.allowed_providers, allow_live: created.allow_live, expires_at: created.expires_at }}
+            configuredProviders={configuredProviders}
+          />
+        )}
       </div>
     </Card>
   );
@@ -832,6 +842,7 @@ export function Workspace() {
   const [pricing, setPricing] = useState<ModelPricingRow[]>([]);
   const [defaultCap, setDefaultCap] = useState(5);
   const [error, setError] = useState<string | null>(null);
+  const [connectKeyId, setConnectKeyId] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     api.getWorkspace().then(setWs).catch((e: Error) => setError(e.message));
@@ -924,8 +935,8 @@ export function Workspace() {
                 </tr>
               )}
               {keys.map((k) => (
+                <Fragment key={k.id}>
                 <tr
-                  key={k.id}
                   className={`border-b border-line last:border-0 ${
                     k.revoked_at ? "text-fg-subtle" : ""
                   }`}
@@ -1015,20 +1026,41 @@ export function Workspace() {
                     {k.revoked_at ? (
                       <span className="text-xs">revoked</span>
                     ) : (
-                      <button
-                        onClick={() =>
-                          api
-                            .revokeKey(k.id)
-                            .then(refresh)
-                            .catch((e: Error) => setError(e.message))
-                        }
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-                      >
-                        Revoke
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => setConnectKeyId(connectKeyId === k.id ? null : k.id)}
+                          aria-expanded={connectKeyId === k.id}
+                          title="How to use this key from OpenAI, Anthropic or Gemini code"
+                          className="rounded border border-line px-2 py-1 text-xs text-fg-muted hover:bg-fill"
+                        >
+                          Connect
+                        </button>
+                        <button
+                          onClick={() =>
+                            api
+                              .revokeKey(k.id)
+                              .then(refresh)
+                              .catch((e: Error) => setError(e.message))
+                          }
+                          className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
+                        >
+                          Revoke
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
+                {connectKeyId === k.id && !k.revoked_at && (
+                  <tr className="border-b border-line bg-surface-2">
+                    <td colSpan={10} className="px-4 py-4">
+                      <IntegrationGuide
+                        keyInfo={{ allowed_providers: k.allowed_providers, allow_live: k.allow_live, expires_at: k.expires_at }}
+                        configuredProviders={configured}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -122,6 +122,33 @@ export interface ModelPricingRow {
   updated_at: string;
 }
 
+export type IntegrationTarget = "hosted" | "local";
+export type IntegrationProviderId = "openai" | "anthropic" | "gemini";
+
+export interface IntegrationProvider {
+  provider: IntegrationProviderId;
+  label: string;
+  sdk: string;
+  install: string;
+  gateway_url: string;
+  base_url: string;
+  endpoint: string;
+  env_vars: { name: string; value: string; comment: string }[];
+  env_file: string;
+  code: string;
+  model_example: string;
+  notes: string[];
+  requirements: string[];
+}
+
+export interface IntegrationGuideData {
+  target: IntegrationTarget;
+  gateway_url: string;
+  targets: Record<IntegrationTarget, string>;
+  general_notes: string[];
+  providers: IntegrationProvider[];
+}
+
 export interface KeyRow {
   id: number;
   label: string;
@@ -134,6 +161,7 @@ export interface KeyRow {
   budget_period: BudgetPeriod;
   budget_start: string | null;
   budget_end: string | null;
+  expires_at: string | null; // null = never expires
   spend_period: number;
   created_at: string;
   last_used_at: string | null;
@@ -155,6 +183,7 @@ export interface KeyCreated {
   budget_period: BudgetPeriod;
   budget_start: string | null;
   budget_end: string | null;
+  expires_at: string | null;
   created_at: string;
 }
 
@@ -323,6 +352,10 @@ export const api = {
 
   // ---- providers (instance-wide env status; admin) ----
   providers: () => req<ProviderEnvStatus[]>("/api/providers"),
+
+  // ---- developer-integration guide (copy-ready per-provider setup; never contains a key) ----
+  integrationGuide: (target: IntegrationTarget) =>
+    req<IntegrationGuideData>(`/api/integration?target=${target}`),
 
   usageSummary: (qs: string) => req<UsageSummary>(`/api/usage/summary${qs}`),
   usageTimeseries: (qs: string) => req<TimeseriesPoint[]>(`/api/usage/timeseries${qs}`),
