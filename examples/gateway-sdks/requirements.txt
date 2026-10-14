@@ -1,0 +1,7 @@
+# Install only the SDKs you use; gateway_client imports each one lazily.
+# These minimums are the versions the examples and the dashboard snippets were actually run against
+# (see README). Older releases are NOT claimed to work: they were not tested.
+openai>=3.29.0
+anthropic>=1.13.0
+google-genai>=2.30.0
+python-dotenv>=1.2.3
