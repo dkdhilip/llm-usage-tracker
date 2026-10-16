@@ -110,9 +110,9 @@ Browser → React (Dashboard — all; Requests · Playground · Workspace — ad
 - **Backend:** FastAPI + SQLAlchemy 2.0 (sync) + psycopg3
 - **DB:** PostgreSQL 16
 - **Deploy:** one Docker image (FastAPI serves the built SPA) + one managed Postgres
-- **CI config:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) defines ruff + pytest
-  (Postgres service), tsc + vitest + build, and `docker build`. It is not committed yet — push
-  it once the repo has GitHub Actions access (`gh auth refresh -h github.com -s workflow`).
+- **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs, on every push and pull request, ruff +
+  pytest (Postgres and Redis services) with the provider SDKs installed, the SDK example tests, tsc + vitest +
+  build, and `docker build` — all on `ubuntu-24.04` runners.
 
 ---
 
@@ -153,13 +153,19 @@ docker compose down -v && docker compose up --build
 
 ```bash
 cd backend && pip install -r requirements-dev.txt
-TEST_DATABASE_URL=postgresql+psycopg://llm:llm@localhost:5432/llmtracker_test pytest   # needs the compose db up
+# the provider-SDK tests skip without these; CI installs exactly these versions
+pip install "openai==3.29.0" "anthropic==1.13.0" "google-genai==2.30.0" "python-dotenv==1.2.3"
+TEST_DATABASE_URL=postgresql+psycopg://llm:llm@localhost:5432/llmtracker_test TEST_REDIS_URL=redis://localhost:6379/1 pytest -rs   # needs the compose db + redis up
 ruff check app tests
+pytest ../examples/gateway-sdks/tests
 
 cd ../frontend && npm ci && npm run typecheck && npm test
 ```
 
-`.github/workflows/ci.yml` runs all of the above plus `docker build` once committed.
+The Redis-backed rate-limit tests (`tests/test_ratelimit.py`) run only when a Redis answers at `TEST_REDIS_URL` and
+skip otherwise (`-rs` prints why). CI starts a Redis service and sets `REQUIRE_REDIS=1`, so there an unreachable
+Redis **fails** the run instead of silently skipping those tests. `.github/workflows/ci.yml` runs all of the above
+plus `docker build`.
 
 ### E2E agent harness
 

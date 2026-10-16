@@ -22,6 +22,7 @@ isolation.
 """
 
 import logging
+import os
 import threading
 
 import pytest
@@ -44,6 +45,17 @@ def _redis_reachable() -> bool:
 requires_redis = pytest.mark.skipif(
     not _redis_reachable(), reason="no reachable Redis in this test environment"
 )
+
+
+# CI provisions a Redis service and sets REQUIRE_REDIS=1. Without this guard a missing or misconfigured service would
+# make every @requires_redis test skip silently - which is exactly how they went unrun before. Local runs without Redis
+# are unaffected: the variable is unset, so this test skips and the Redis-only tests skip as they always did.
+@pytest.mark.skipif(not os.environ.get("REQUIRE_REDIS"), reason="REQUIRE_REDIS is not set (Redis is optional locally)")
+def test_redis_is_reachable_when_ci_requires_it():
+    assert _redis_reachable(), (
+        "REQUIRE_REDIS is set but no Redis answered at REDIS_URL, so the Redis-only tests in this module would have "
+        "been skipped instead of run - fix the CI Redis service (or TEST_REDIS_URL)"
+    )
 
 
 # ---- basic allow/deny + window semantics (backend-agnostic: whichever

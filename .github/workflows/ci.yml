@@ -5,9 +5,12 @@ on:
     branches: ["**"]
   pull_request:
 
+# Runners are pinned to ubuntu-24.04, the image the last green run used. `ubuntu-latest` is migrating to
+# Ubuntu 26.04 gradually between 2026-10-19 and 2026-11-19, so with it a run could land on either image
+# mid-window. Move to 26.04 on purpose, in its own change, after a trial run (runs-on: ubuntu-26.04).
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -19,8 +22,20 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U llm"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      # tests/test_ratelimit.py's Redis-only tests (atomicity under 50 concurrent callers, "really uses Redis")
+      # skip when no Redis answers, so this service is what makes them run.
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       TEST_DATABASE_URL: postgresql+psycopg://llm:llm@localhost:5432/llmtracker_test
+      # Logical DB 1, apart from anything using DB 0. REQUIRE_REDIS turns a missing or unreachable Redis into a
+      # test FAILURE (test_redis_is_reachable_when_ci_requires_it) instead of the Redis-only tests skipping silently.
+      TEST_REDIS_URL: redis://localhost:6379/1
+      REQUIRE_REDIS: "1"
     defaults:
       run:
         working-directory: backend
@@ -37,12 +52,12 @@ jobs:
       # with examples/gateway-sdks/requirements.txt.
       - run: pip install "openai==3.29.0" "anthropic==1.13.0" "google-genai==2.30.0" "python-dotenv==1.2.3"
       - run: ruff check app tests
-      - run: pytest -q
+      - run: pytest -rs
       # Client contract tests for examples/gateway-sdks: a local stand-in gateway, nothing leaves 127.0.0.1.
       - run: pytest -q ../examples/gateway-sdks/tests
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
@@ -50,7 +65,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 20 is past end-of-life (2026-04-30); 24 is the Active LTS. Verified locally on 24.16.0 with a clean
+          # `npm ci` + typecheck + vitest + build. (The Dockerfile still builds the SPA on node:20-alpine.)
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -59,7 +76,7 @@ jobs:
       - run: npm run build
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t llm-usage-tracker:ci .
