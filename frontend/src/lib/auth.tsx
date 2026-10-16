@@ -4,10 +4,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { api, type AuthUser, type WorkspaceRef, type WorkspaceRole } from "./api";
+import {
+  api,
+  setSessionExpiredHandler,
+  type AuthUser,
+  type WorkspaceRef,
+  type WorkspaceRole,
+} from "./api";
 
 interface AuthCtx {
   user: AuthUser | null;
@@ -17,6 +24,8 @@ interface AuthCtx {
   inWorkspace: boolean;
   isWorkspaceAdmin: boolean;
   loading: boolean;
+  /** True once a signed-in user's session was found to be expired (cleared by the next sign-in or sign-out). */
+  sessionExpired: boolean;
   login: (username: string, password: string) => Promise<void>;
   signup: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -28,6 +37,19 @@ const Ctx = createContext<AuthCtx | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const userRef = useRef<AuthUser | null>(null);
+  userRef.current = user;
+
+  // api.ts reports a 401 from the session-authenticated API here. Dropping `user` is all it takes: the existing
+  // RequireAuth / RequireWorkspace wrappers already redirect an unauthenticated visitor to /login.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      if (userRef.current) setSessionExpired(true); // only a signed-in user can have an expired session
+      setUser(null);
+    });
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -46,15 +68,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     setUser((await api.login(username, password)).user);
+    setSessionExpired(false);
   }, []);
 
   const signup = useCallback(async (username: string, password: string) => {
     setUser((await api.signup(username, password)).user);
+    setSessionExpired(false);
   }, []);
 
   const logout = useCallback(async () => {
     await api.logout();
     setUser(null);
+    setSessionExpired(false);
   }, []);
 
   const value = useMemo<AuthCtx>(() => {
@@ -67,12 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       inWorkspace: workspace !== null,
       isWorkspaceAdmin: workspace?.role === "admin",
       loading,
+      sessionExpired,
       login,
       signup,
       logout,
       refresh,
     };
-  }, [user, loading, login, signup, logout, refresh]);
+  }, [user, loading, sessionExpired, login, signup, logout, refresh]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -10,7 +10,30 @@ export function csrfToken(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Expired sessions. A 401 from the cookie-authenticated /api surface means the session is gone (it expired, or the
+// account was removed elsewhere): the app is told so it can drop to signed-out and show the login page. It is NOT
+// raised for /api/auth/login|signup (a 401 there only means "wrong username or password"), nor for the /v1
+// virtual-key API the Playground calls through this same function (a 401 there is a bad or revoked virtual key, not
+// a session). Other 403s (not an admin, no workspace, key paused) are real answers and never sign the user out.
+let sessionExpiredHandler: (() => void) | null = null;
+
+export function setSessionExpiredHandler(fn: (() => void) | null): void {
+  sessionExpiredHandler = fn;
+}
+
+const AUTH_ENTRY_PATHS = new Set(["/api/auth/login", "/api/auth/signup"]);
+
+function isSessionRequest(path: string): boolean {
+  const p = path.split("?")[0];
+  return p.startsWith("/api/") && !AUTH_ENTRY_PATHS.has(p);
+}
+
+// The server's CSRF rejection (backend/app/csrf.py): a 403 whose detail starts with "CSRF token".
+function isCsrfRejection(status: number, detail: unknown): boolean {
+  return status === 403 && typeof detail === "string" && detail.startsWith("CSRF token");
+}
+
+async function req<T>(path: string, init: RequestInit = {}, retriedAfterCsrf = false): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const token = SAFE_METHODS.has(method) ? null : csrfToken();
   const res = await fetch(BASE + path, {
@@ -28,6 +51,18 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
       detail = (await res.json())?.detail ?? detail;
     } catch {
       /* body was not JSON */
+    }
+    if (isSessionRequest(path)) {
+      if (res.status === 401) {
+        sessionExpiredHandler?.();
+      } else if (isCsrfRejection(res.status, detail) && !retriedAfterCsrf) {
+        // The csrf_token cookie is missing or stale while the session may still be valid (a session older than the
+        // CSRF rollout, a cleared cookie). GET /api/auth/me re-issues it. The server refused this request before
+        // running it, so retrying once is safe. If /me says signed out, it is the session that expired.
+        const me = await req<{ authenticated: boolean }>("/api/auth/me");
+        if (me.authenticated) return req<T>(path, init, true);
+        sessionExpiredHandler?.();
+      }
     }
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }

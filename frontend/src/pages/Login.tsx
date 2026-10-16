@@ -4,7 +4,7 @@ import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
 
 export function Login() {
-  const { login, signup, authenticated } = useAuth();
+  const { login, signup, authenticated, sessionExpired } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState("");
@@ -37,6 +37,11 @@ export function Login() {
             ? "Create an account, then start a workspace for your team or join one with an invite code."
             : "Sign in to your workspace — usage, virtual keys, and cost tracking."}
         </p>
+        {sessionExpired && (
+          <p role="status" className="mb-3 text-sm text-amber-700 dark:text-amber-400">
+            Your session expired. Please sign in again.
+          </p>
+        )}
         <form onSubmit={submit} className="space-y-3">
           <label className="block text-xs font-medium text-fg-muted">
             Username
