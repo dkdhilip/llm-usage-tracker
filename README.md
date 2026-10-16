@@ -403,6 +403,40 @@ image part rides through exactly like an inline text part always has.
 
 ### Connect an app (developer setup)
 
+**OpenAI — the standard approach is environment-based.** A project that already uses the official OpenAI
+SDK switches to the gateway by editing its `.env`, with no change to its model-calling code:
+
+```env
+OPENAI_API_KEY=vk_your_virtual_key                                      # REPLACES your existing OPENAI_API_KEY
+OPENAI_BASE_URL=https://llm-usage-tracker-97q0.onrender.com/v1          # NEW; local: http://127.0.0.1:8000/v1
+```
+
+```python
+from openai import OpenAI
+client = OpenAI()   # unchanged: reads OPENAI_API_KEY and OPENAI_BASE_URL
+```
+
+Things to know:
+
+1. **Both variables are required.** A virtual key alone does not redirect anything; `OPENAI_BASE_URL` is what
+   points the SDK at the gateway, and it ends in `/v1` (hosted or local).
+2. **The SDK never reads `.env` itself.** Your application (or framework) must load it — for example
+   `python-dotenv`'s `load_dotenv()` — or the variables must already be in the process environment (shell,
+   container, CI).
+3. **Real environment variables win over `.env`** (the usual convention). Use `.env` for local development; in
+   Docker, CI and production set `OPENAI_API_KEY` and `OPENAI_BASE_URL` in the platform and do not ship a `.env`
+   file.
+4. **The dashboard's snippet validates before it builds the client:** `OPENAI_API_KEY` must start with `vk_` and
+   `OPENAI_BASE_URL` must be set, otherwise it raises a clear error (never showing the key) before any request is
+   made. That catches a real `sk-…` key exported in your shell and a missing base URL, which would otherwise send
+   your virtual key to `api.openai.com`. The standard `OpenAI()` client cannot do this by itself, so if you load
+   `.env` your own way, keep an equivalent check.
+5. **Prefer to configure the client in code?** The explicit variant passes `api_key=` / `base_url=` after the same
+   checks; arguments passed in code take precedence over the environment.
+6. **Model names.** A bare name such as `gpt-4o-mini` works only if the virtual key has a default provider (the
+   `default_provider` field of the key API, set to `openai`). A key created from the dashboard has none, so use
+   `openai/gpt-4o-mini`; otherwise the gateway answers `422` before any provider is contacted.
+
 A **virtual key does not redirect an SDK by itself**: the application must be pointed at the gateway
 (environment variables, a client option, or a shared helper). Pick the form for your SDK — they differ,
 and the wrong one double-prefixes the path (measured against the official SDKs):
@@ -416,16 +450,17 @@ and the wrong one double-prefixes the path (measured against the official SDKs):
 Hosted gateway root: `https://llm-usage-tracker-97q0.onrender.com` (OpenAI base URL: `…/v1`); local:
 `http://127.0.0.1:8000`. The dashboard's **Workspace → Create a virtual key** shows these, with copy-ready
 code, right after a key is created, and **Connect** on any live key row reopens them with a readiness
-checklist (provider enabled, live on, workspace credential present). Snippets only ever contain the
-placeholder `vk_...` — a key is shown once and never stored.
+checklist (provider enabled, live on, workspace credential present, not expired). Snippets only ever contain
+the placeholder `vk_...` — a key is shown once and never stored.
 
 Never put a real provider key in an application — real credentials belong in the gateway workspace. Mind
 the ambient environment (all measured): a real `OPENAI_API_KEY` already set on a machine beats a `.env`; a
 bare `load_dotenv(override=True)` walks up parent directories and can load an unrelated parent `.env`; a
 missing base URL makes an SDK fall back to the provider's own host (sending your virtual key there); and in
-the Gemini SDK `GOOGLE_API_KEY` silently overrides `GEMINI_API_KEY`. The dashboard's snippets therefore load
-only the project's own `.env`, pass the key and base URL explicitly, and raise an error if either is
-missing. The shared helper in [`examples/gateway-sdks/`](examples/gateway-sdks/README.md) does the same:
+the Gemini SDK `GOOGLE_API_KEY` silently overrides `GEMINI_API_KEY`. The dashboard's snippets therefore load only the project's own `.env`. The Anthropic and Gemini snippets let
+that `.env` win, pass the key and base URL explicitly, and raise an error if either is missing. The OpenAI
+snippets (standard and explicit) let real environment variables win and refuse a key that does not start with
+`vk_` or a missing base URL, as described above. The shared helper in [`examples/gateway-sdks/`](examples/gateway-sdks/README.md) does the same:
 one `LLM_GATEWAY_KEY` in the project's `.env`, rotated by editing that one line, with `LLM_GATEWAY_URL` to
 switch between local and hosted. Tested SDK minimums: `openai` 3.29.0, `anthropic` 1.13.0, `google-genai`
 2.30.0, `python-dotenv` 1.2.3.

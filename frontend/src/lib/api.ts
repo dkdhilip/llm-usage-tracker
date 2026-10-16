@@ -129,6 +129,7 @@ export interface IntegrationProvider {
   provider: IntegrationProviderId;
   label: string;
   sdk: string;
+  intro?: string; // lead-in shown above the steps (OpenAI only)
   install: string;
   gateway_url: string;
   base_url: string;
@@ -136,6 +137,8 @@ export interface IntegrationProvider {
   env_vars: { name: string; value: string; comment: string }[];
   env_file: string;
   code: string;
+  alt_title?: string; // a second, explicit-configuration snippet (OpenAI only)
+  alt_code?: string;
   model_example: string;
   notes: string[];
   requirements: string[];

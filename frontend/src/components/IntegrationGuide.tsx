@@ -172,6 +172,7 @@ export function IntegrationGuide({
 
       {p && (
         <div role="tabpanel" className="space-y-3">
+          {p.intro && <p className="text-sm text-fg">{p.intro}</p>}
           {keyInfo && (
             <ul aria-label="Readiness" className="space-y-1 text-xs">
               {checks.map((c) => (
@@ -195,6 +196,7 @@ export function IntegrationGuide({
           <Block title="1. Install" text={p.install} />
           <Block title="2. .env (git-ignored)" text={p.env_file} />
           <Block title="3. Minimal request" text={p.code} />
+          {p.alt_code && <Block title={p.alt_title || "3b. Alternative: explicit configuration"} text={p.alt_code} />}
           <p className="text-xs text-fg-muted">
             Endpoint: <code className="font-mono text-fg">{p.endpoint}</code>
           </p>

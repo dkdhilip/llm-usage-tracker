@@ -45,6 +45,13 @@ HELPER_DIR = Path(__file__).resolve().parents[2] / "examples" / "gateway-sdks"
 pytestmark = pytest.mark.skipif(not (HELPER_DIR / "gateway_client.py").exists(), reason="examples/ directory not available")
 
 ALL = ["openai", "anthropic", "gemini"]
+# Every runnable snippet the dashboard shows, as (provider, field of integration.setup_for). OpenAI has two: the
+# standard environment-based one (its primary, `client = OpenAI()`) and the explicit alternative. ALL of them stop with
+# a clear error before any request when the configuration is missing or wrong.
+SNIPPETS = [("openai", "code"), ("anthropic", "code"), ("gemini", "code"), ("openai", "alt_code")]
+SNIPPET_IDS = ["openai", "anthropic", "gemini", "openai-explicit"]
+OPENAI_SNIPPETS = [("openai", "code"), ("openai", "alt_code")]
+OPENAI_IDS = ["openai", "openai-explicit"]
 # What the gateway must call upstream, and how it must authenticate there, per provider. The workspace
 # credential is the fake one tests/conftest.py attaches — the virtual key must never appear upstream.
 UPSTREAM = {
@@ -144,19 +151,21 @@ def _clean_env(extra: dict[str, str]) -> dict[str, str]:
 # ----------------------------------------------------------------------------- the dashboard's snippets, run verbatim
 
 
-@pytest.mark.parametrize("provider", ALL)
+@pytest.mark.parametrize(("provider", "field"), SNIPPETS, ids=SNIPPET_IDS)
 def test_the_dashboards_copy_ready_snippet_works_unchanged_through_the_gateway(
-    provider, tmp_path, live_server, make_live_key, admin_client, fake_providers
+    provider, field, tmp_path, live_server, make_live_key, admin_client, fake_providers
 ):
     """The exact text a developer would copy: the .env block (key pasted in) and the code, run as a
-    separate process — with a REAL provider key sitting in the shell as a trap."""
-    key = make_live_key(allowed_providers=ALL, label=f"{provider}-snippet")["key"]
+    separate process. Anthropic's and Gemini's snippets (their .env wins) also face real provider keys in the shell as
+    traps; the OpenAI snippets let the real environment win, so their ambient-key cases are tested separately below."""
+    label = f"{provider}-{field}-snippet"
+    key = make_live_key(allowed_providers=ALL, label=label)["key"]
     setup = integration.setup_for(provider, live_server)  # what GET /api/integration returns for this gateway
 
     (tmp_path / ".env").write_text(setup["env_file"].replace("vk_...", key) + "\n")
-    (tmp_path / "snippet.py").write_text(setup["code"])
-    traps = {"OPENAI_API_KEY": "sk-AMBIENT-REAL-OPENAI-KEY", "ANTHROPIC_API_KEY": "sk-ant-AMBIENT-REAL-KEY",
-             "GOOGLE_API_KEY": "AIza-AMBIENT-REAL-GOOGLE-KEY"}
+    (tmp_path / "snippet.py").write_text(setup[field])
+    traps = {} if provider == "openai" else {"OPENAI_API_KEY": "sk-AMBIENT-REAL-OPENAI-KEY", "ANTHROPIC_API_KEY": "sk-ant-AMBIENT-REAL-KEY",
+                                              "GOOGLE_API_KEY": "AIza-AMBIENT-REAL-GOOGLE-KEY"}
     r = subprocess.run([sys.executable, "snippet.py"], cwd=tmp_path, env=_clean_env(traps), capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stderr
     assert "Hello there, nice to meet you" in r.stdout
@@ -171,13 +180,36 @@ def test_the_dashboards_copy_ready_snippet_works_unchanged_through_the_gateway(
     # ...and the request is on the dashboard with usage and (when the model is priced) cost.
     (row,) = _rows(admin_client)
     model, cost_source = RECORDED[provider]
-    assert (row["key_label"], row["provider"], row["model"], row["status"]) == (f"{provider}-snippet", provider, model, "success")
+    assert (row["key_label"], row["provider"], row["model"], row["status"]) == (label, provider, model, "success")
     assert (row["prompt_tokens"], row["completion_tokens"], row["total_tokens"]) == (14, 6, 20)
     assert row["cost_source"] == cost_source
     assert (row["cost"] is None) == (cost_source == "unknown")
 
 
-# ----------------------------------------------------------------------------- snippets fail closed and read only the project's .env
+def test_existing_openai_code_works_unchanged_when_only_the_environment_is_set(
+    tmp_path, live_server, make_live_key, admin_client, fake_providers
+):
+    """The headline claim: a project that already calls `client = OpenAI()` and has the two variables in its process
+    environment (loaded by its framework, a shell, a container, CI — no dotenv call anywhere) talks to the gateway."""
+    key = make_live_key(allowed_providers=ALL, label="existing-openai-app")["key"]
+    (tmp_path / "existing_app.py").write_text(
+        'from openai import OpenAI\n\nclient = OpenAI()\n'
+        'r = client.chat.completions.create(model="openai/gpt-4o-mini", messages=[{"role": "user", "content": "hi"}], max_tokens=20)\n'
+        'print(r.choices[0].message.content)\n'
+    )
+    env = _clean_env({"OPENAI_API_KEY": key, "OPENAI_BASE_URL": integration.setup_for("openai", live_server)["base_url"]})
+    r = subprocess.run([sys.executable, "existing_app.py"], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
+    assert "Hello there, nice to meet you" in r.stdout
+
+    (url, headers, body), = fake_providers.calls
+    assert url == UPSTREAM["openai"][0] and headers["Authorization"] == UPSTREAM["openai"][2]
+    assert key not in json.dumps([headers, body])  # the virtual key never goes upstream
+    (row,) = _rows(admin_client)
+    assert (row["key_label"], row["provider"], row["status"]) == ("existing-openai-app", "openai", "success")
+
+
+# ----------------------------------------------------------------------------- bad or missing configuration stops a snippet before any request; only the project's .env is read
 
 
 class ConnectionCounter:
@@ -232,7 +264,7 @@ def _names(provider: str) -> tuple[str, str]:
     return key_var, url_var
 
 
-def _project(directory: Path, provider: str, gateway_url: str | None, key: str | None) -> None:
+def _project(directory: Path, provider: str, gateway_url: str | None, key: str | None, field: str = "code") -> None:
     """A project directory holding the dashboard's snippet and (optionally) its .env, filled in."""
     directory.mkdir(parents=True, exist_ok=True)
     key_var, url_var = _names(provider)
@@ -244,21 +276,21 @@ def _project(directory: Path, provider: str, gateway_url: str | None, key: str |
         lines.append(f"{url_var}={setup['base_url'] if provider == 'openai' else setup['gateway_url']}")
     if lines:
         (directory / ".env").write_text("\n".join(lines) + "\n")
-    (directory / "snippet.py").write_text(setup["code"])
+    (directory / "snippet.py").write_text(setup[field])
 
 
 def _run_snippet(directory: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, "snippet.py"], cwd=directory, env=env, capture_output=True, text=True, timeout=120)
 
 
-@pytest.mark.parametrize("provider", ALL)
+@pytest.mark.parametrize(("provider", "field"), SNIPPETS, ids=SNIPPET_IDS)
 def test_a_parent_directory_env_cannot_override_the_projects_own_configuration(
-    provider, tmp_path, live_server, make_live_key, fake_providers, internet
+    provider, field, tmp_path, live_server, make_live_key, fake_providers, internet
 ):
     key = make_live_key(allowed_providers=ALL)["key"]
     parent, project = tmp_path / "parent", tmp_path / "parent" / "project"
-    _project(parent, provider, internet.url, "sk-PARENT-REAL-KEY")  # a parent .env that points somewhere else
-    _project(project, provider, live_server, key)
+    _project(parent, provider, internet.url, "sk-PARENT-REAL-KEY", field)  # a parent .env that points somewhere else
+    _project(project, provider, live_server, key, field)
 
     r = _run_snippet(project, _clean_env({}))
     assert r.returncode == 0, r.stderr
@@ -268,17 +300,27 @@ def test_a_parent_directory_env_cannot_override_the_projects_own_configuration(
     assert internet.settled() == 0  # nothing was sent to the parent's URL
 
 
-@pytest.mark.parametrize("provider", ALL)
+def _message(provider: str, what: str) -> str:
+    """The text a snippet raises. OpenAI's (standard and explicit) say what is wrong; Anthropic's and Gemini's name the variable."""
+    key_var, url_var = _names(provider)
+    if provider == "openai":
+        return {"key": f"{key_var} is missing or is not a gateway virtual key", "url": f"{url_var} is not set",
+                "both": f"{key_var} is missing or is not a gateway virtual key"}[what]  # the key is checked first
+    return {"key": f"Missing {key_var} - add it", "url": f"Missing {url_var} - add it",
+            "both": f"Missing {key_var}, {url_var} - add it"}[what]
+
+
+@pytest.mark.parametrize(("provider", "field"), SNIPPETS, ids=SNIPPET_IDS)
 def test_without_its_own_env_a_project_never_borrows_a_parent_directorys(
-    provider, tmp_path, live_server, make_live_key, fake_providers, internet
+    provider, field, tmp_path, live_server, make_live_key, fake_providers, internet
 ):
     """The parent holds a COMPLETE, working configuration. A snippet that walked up the tree would succeed
-    with it; this one must refuse, because the project itself has no .env."""
+    with it; these must refuse, because the project itself has no .env."""
     key = make_live_key(allowed_providers=ALL)["key"]
-    key_var, url_var = _names(provider)
+    key_var, _ = _names(provider)
     parent, project = tmp_path / "parent", tmp_path / "parent" / "project"
-    _project(parent, provider, live_server, key)
-    _project(project, provider, None, None)
+    _project(parent, provider, live_server, key, field)
+    _project(project, provider, None, None, field)
 
     # control: the OLD pattern (bare load_dotenv(override=True)) really does pick up the parent's .env here,
     # so this test would have caught it.
@@ -288,8 +330,7 @@ def test_without_its_own_env_a_project_never_borrows_a_parent_directorys(
     assert old.stdout.strip() == key
 
     r = _run_snippet(project, _clean_env({}))
-    assert r.returncode != 0 and "RuntimeError" in r.stderr
-    assert f"Missing {key_var}, {url_var} - add it" in r.stderr
+    assert r.returncode != 0 and "RuntimeError" in r.stderr and _message(provider, "both") in r.stderr
     assert key not in r.stdout + r.stderr
     assert fake_providers.calls == [] and internet.settled() == 0
 
@@ -301,14 +342,18 @@ NAIVE = {  # what an SDK does when it is only handed the key: it heads for the p
 }
 
 
-@pytest.mark.parametrize("provider", ALL)
-def test_a_missing_base_url_stops_the_snippet_and_never_sends_the_virtual_key_to_a_provider_host(
-    provider, tmp_path, make_live_key, internet
+def _proxied(internet) -> dict[str, str]:
+    """Every outbound HTTP(S) call from the subprocess goes to `internet`; NO_PROXY is emptied so no provider host is exempt."""
+    return {"HTTP_PROXY": internet.url, "HTTPS_PROXY": internet.url, "NO_PROXY": ""}
+
+
+@pytest.mark.parametrize(("provider", "field"), SNIPPETS, ids=SNIPPET_IDS)
+def test_a_missing_base_url_stops_every_snippet_and_never_sends_the_virtual_key_to_a_provider_host(
+    provider, field, tmp_path, make_live_key, internet
 ):
     key = make_live_key(allowed_providers=ALL)["key"]
-    key_var, url_var = _names(provider)
-    # every outbound HTTP(S) call from the subprocess goes to `internet`; NO_PROXY is emptied so no provider host is exempt
-    proxied = {"HTTP_PROXY": internet.url, "HTTPS_PROXY": internet.url, "NO_PROXY": ""}
+    key_var, _ = _names(provider)
+    proxied = _proxied(internet)
 
     # control: handed only the key, the SDK DOES head for the provider — the listener sees it
     (tmp_path / "naive.py").write_text(NAIVE[provider])
@@ -319,20 +364,58 @@ def test_a_missing_base_url_stops_the_snippet_and_never_sends_the_virtual_key_to
 
     # the dashboard snippet, with a .env that has the key but NOT the URL
     project = tmp_path / "project"
-    _project(project, provider, None, key)
+    _project(project, provider, None, key, field)
     r = _run_snippet(project, _clean_env(proxied))
     assert r.returncode != 0 and "RuntimeError" in r.stderr
-    assert f"Missing {url_var} - add it" in r.stderr  # names exactly the missing variable
+    assert _message(provider, "url") in r.stderr  # names exactly what is missing
     assert key not in r.stdout + r.stderr
     assert internet.settled() == before  # no connection attempted at all
 
 
-@pytest.mark.parametrize("provider", ALL)
-def test_a_missing_key_also_stops_the_snippet(provider, tmp_path, live_server):
-    key_var, _ = _names(provider)
-    _project(tmp_path, provider, live_server, None)
+@pytest.mark.parametrize(("provider", "field"), SNIPPETS, ids=SNIPPET_IDS)
+def test_a_missing_key_also_stops_the_snippet(provider, field, tmp_path, live_server):
+    _project(tmp_path, provider, live_server, None, field)
     r = _run_snippet(tmp_path, _clean_env({}))
-    assert r.returncode != 0 and f"Missing {key_var} - add it" in r.stderr
+    assert r.returncode != 0 and "RuntimeError" in r.stderr and _message(provider, "key") in r.stderr
+
+
+@pytest.mark.parametrize(("provider", "field"), OPENAI_SNIPPETS, ids=OPENAI_IDS)
+def test_real_environment_variables_win_over_dotenv_values(
+    provider, field, tmp_path, live_server, make_live_key, admin_client, fake_providers
+):
+    """What a platform-injected configuration relies on: the .env holds a different key and a dead URL, the real
+    environment holds the working ones — and the real environment is what is used."""
+    key = make_live_key(allowed_providers=ALL, label="platform-injected")["key"]
+    project = tmp_path / "project"
+    _project(project, "openai", "http://127.0.0.1:1", "vk_FROM_DOTENV_FILE_UNUSED", field)  # dead port 1: unusable
+    env = _clean_env({"OPENAI_API_KEY": key, "OPENAI_BASE_URL": integration.setup_for("openai", live_server)["base_url"]})
+    r = _run_snippet(project, env)
+    assert r.returncode == 0, r.stderr
+    (row,) = _rows(admin_client)
+    assert (row["key_label"], row["provider"], row["status"]) == ("platform-injected", "openai", "success")
+    (url, headers, body), = fake_providers.calls
+    assert key not in json.dumps([headers, body]) and "FROM_DOTENV" not in json.dumps([headers, body])
+
+
+@pytest.mark.parametrize(("provider", "field"), OPENAI_SNIPPETS, ids=OPENAI_IDS)
+@pytest.mark.parametrize("where", ["environment", "dotenv"])
+def test_a_real_looking_provider_key_is_refused_before_any_request_and_never_echoed(
+    provider, field, where, tmp_path, live_server, make_live_key, fake_providers, internet
+):
+    """The point of the guard: an sk-... key — exported in the shell (it wins over .env) or written into .env —
+    can never be sent to the gateway. Dummy values only."""
+    good = make_live_key(allowed_providers=ALL)["key"]
+    real_looking = "sk-AMBIENT-REAL-OPENAI-KEY-0123456789"
+    project = tmp_path / "project"
+    _project(project, "openai", live_server, real_looking if where == "dotenv" else good, field)
+    extra = {"OPENAI_API_KEY": real_looking} if where == "environment" else {}
+
+    r = _run_snippet(project, _clean_env({**_proxied(internet), **extra}))
+    assert r.returncode != 0 and "RuntimeError" in r.stderr
+    assert "is not a gateway virtual key" in r.stderr and "unset it" in r.stderr  # actionable
+    assert real_looking not in r.stdout + r.stderr and good not in r.stdout + r.stderr  # never printed
+    assert fake_providers.calls == []  # the gateway was never reached...
+    assert internet.settled() == 0  # ...and neither was any other host
 
 
 def test_the_declared_sdk_minimums_are_versions_this_suite_actually_ran():

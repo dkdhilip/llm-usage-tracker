@@ -55,32 +55,28 @@ def normalize_root(url: str) -> str:
 
 # ------------------------------------------------------------------------------ per-provider definitions
 
-_OPENAI = {
-    "label": "OpenAI",
-    "sdk": "openai (Python)",
-    "install": _install("openai"),
-    "url_suffix": "/v1",
-    "env": [
-        ("OPENAI_API_KEY", KEY_PLACEHOLDER, "your gateway VIRTUAL key — never a real OpenAI key"),
-        ("OPENAI_BASE_URL", "${root}/v1", "gateway root + /v1"),
-    ],
-    "endpoint": "POST ${root}/v1/chat/completions",
-    "model": "openai/gpt-4o-mini",
-    "code": Template(
-        '''import os
+_OPENAI_EXPLICIT = Template(
+    '''import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# Only THIS project's .env (the current directory's - never a parent's); it wins over variables
-# already set on your machine, so a real OPENAI_API_KEY there is never used.
-load_dotenv(Path.cwd() / ".env", override=True)
+# This project's .env only (the current directory's - never a parent's). Real environment variables win over it
+# (the usual convention), so a value set by Docker, CI or your platform is never overridden.
+load_dotenv(Path.cwd() / ".env")
 
-# Fail closed: with no base URL the SDK would send your key to api.openai.com.
-missing = [n for n in ("OPENAI_API_KEY", "OPENAI_BASE_URL") if not os.environ.get(n)]
-if missing:
-    raise RuntimeError(f"Missing {', '.join(missing)} - add it to .env (step 2) and run from this project's directory.")
+# Fail closed BEFORE the client is built, so no request can reach a provider. The error never shows the key.
+if not os.environ.get("OPENAI_API_KEY", "").startswith("vk_"):
+    raise RuntimeError(
+        "OPENAI_API_KEY is missing or is not a gateway virtual key (vk_...). Put your virtual key in .env; if a real "
+        "OpenAI key is exported in your environment, unset it - real environment variables take precedence over .env."
+    )
+if not os.environ.get("OPENAI_BASE_URL"):
+    raise RuntimeError(
+        "OPENAI_BASE_URL is not set - add your gateway URL (ending in /v1) to .env. Without it the SDK would send "
+        "your virtual key to api.openai.com."
+    )
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ["OPENAI_BASE_URL"])
 
@@ -91,16 +87,85 @@ response = client.chat.completions.create(
 )
 print(response.choices[0].message.content)
 '''
+)
+
+_OPENAI = {
+    "label": "OpenAI",
+    "sdk": "openai (Python)",
+    "intro": (
+        "Already using the OpenAI SDK? You normally don't need to change your code. In your project's .env, "
+        "replace your existing OPENAI_API_KEY with this virtual key and add OPENAI_BASE_URL — your existing "
+        "client = OpenAI() code then talks to the gateway (see the note on model names). A virtual key alone does "
+        "not redirect anything: OPENAI_BASE_URL is what points the SDK at the gateway."
     ),
+    "install": _install("openai"),
+    "url_suffix": "/v1",
+    "env": [
+        (
+            "OPENAI_API_KEY",
+            KEY_PLACEHOLDER,
+            "REPLACES your existing OPENAI_API_KEY - your gateway VIRTUAL key, never a real OpenAI key",
+        ),
+        ("OPENAI_BASE_URL", "${root}/v1", "NEW - points the OpenAI SDK at the gateway: gateway root + /v1"),
+    ],
+    "endpoint": "POST ${root}/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "code": Template(
+        '''import os
+from pathlib import Path
+
+from dotenv import load_dotenv  # only needed if your app does not already load .env
+from openai import OpenAI
+
+# The SDK does NOT read .env itself: your app must load it (as here, or with your framework's settings loader),
+# or the variables must already be set in the process environment (shell, container, CI, your platform).
+# Real environment variables win over .env (the usual convention), so a value set by your platform is never overridden.
+load_dotenv(Path.cwd() / ".env")
+
+# Fail closed BEFORE the client exists, so no request can reach a provider. The error never shows the key.
+if not os.environ.get("OPENAI_API_KEY", "").startswith("vk_"):
+    raise RuntimeError(
+        "OPENAI_API_KEY is missing or is not a gateway virtual key (vk_...). Put your virtual key in .env; if a real "
+        "OpenAI key is exported in your environment, unset it - real environment variables take precedence over .env."
+    )
+if not os.environ.get("OPENAI_BASE_URL"):
+    raise RuntimeError(
+        "OPENAI_BASE_URL is not set - add your gateway URL (ending in /v1) to .env. Without it the SDK would send "
+        "your virtual key to api.openai.com."
+    )
+
+client = OpenAI()  # reads OPENAI_API_KEY and OPENAI_BASE_URL - your existing code needs no change
+
+response = client.chat.completions.create(
+    model="openai/gpt-4o-mini",
+    messages=[{"role": "user", "content": "Say hello in five words."}],
+    max_tokens=20,
+)
+print(response.choices[0].message.content)
+'''
+    ),
+    "alt_title": "3b. Alternative: explicit configuration (fails closed)",
+    "alt_code": _OPENAI_EXPLICIT,
     "notes": [
-        "The base URL ends in /v1 — the SDK appends /chat/completions.",
-        "Use the openai/<model> form (as above) with any key. A key with a single provider has it as its "
-        "default provider, and then a bare model name like gpt-4o-mini works too.",
-        "The snippet reads only this project's .env (from the directory you run in, never a parent's), lets it "
-        "win over variables already set on your machine, and passes the key and base URL to the SDK explicitly — "
-        "so a real OPENAI_API_KEY on your machine is never sent to the gateway.",
-        "If OPENAI_API_KEY or OPENAI_BASE_URL is missing the snippet stops with an error instead of letting the "
-        "SDK fall back to api.openai.com, which would send your virtual key to OpenAI.",
+        "Both variables are required: the virtual key authenticates you, and OPENAI_BASE_URL is what sends the "
+        "request to the gateway. The base URL ends in /v1 — the SDK appends /chat/completions.",
+        "Environment files are not magic: the OpenAI SDK never reads .env itself. Your application must load it "
+        "(python-dotenv's load_dotenv(), or your framework's settings loader), or the variables must already be "
+        "present in the process environment.",
+        "Development versus production: real environment variables win over .env (the usual convention — it is "
+        "what lets Docker, CI and your hosting platform configure production). Use .env for local development; in "
+        "Docker, CI and production set OPENAI_API_KEY and OPENAI_BASE_URL in the platform and do not ship a .env file.",
+        "Before creating the client, the snippet checks that OPENAI_API_KEY starts with vk_ and that OPENAI_BASE_URL "
+        "is set, and stops with an error otherwise — so a real sk-… key exported in your shell, or a missing base "
+        "URL, is caught before any request is made. The error never shows the key. If you load .env your own way, "
+        "keep an equivalent check: the standard OpenAI() client cannot do this itself and would default to "
+        "api.openai.com.",
+        "Prefer to configure the client in code? The explicit alternative below passes api_key= and base_url= after "
+        "the same checks; arguments passed in code take precedence over the environment.",
+        "Model names: existing code that calls a bare model name such as gpt-4o-mini works only if the virtual key has "
+        "a default provider (the default_provider field of the key API, set to openai). A key created from the "
+        "dashboard has no default provider, so use the openai/ prefix (as in the examples, openai/gpt-4o-mini); "
+        "without it the gateway answers 422 before any provider is contacted.",
     ],
 }
 
@@ -110,8 +175,8 @@ _ANTHROPIC = {
     "install": _install("anthropic"),
     "url_suffix": "",
     "env": [
-        ("ANTHROPIC_API_KEY", KEY_PLACEHOLDER, "your gateway VIRTUAL key — never a real Anthropic key"),
-        ("ANTHROPIC_BASE_URL", "${root}", "gateway ROOT — no /v1: the SDK adds /v1/messages itself"),
+        ("ANTHROPIC_API_KEY", KEY_PLACEHOLDER, "your gateway VIRTUAL key - never a real Anthropic key"),
+        ("ANTHROPIC_BASE_URL", "${root}", "gateway ROOT - no /v1: the SDK adds /v1/messages itself"),
     ],
     "endpoint": "POST ${root}/v1/messages",
     "model": "claude-haiku-4-5-20251001",
@@ -158,8 +223,8 @@ _GEMINI = {
     "install": _install("google-genai"),
     "url_suffix": "",
     "env": [
-        ("GEMINI_API_KEY", KEY_PLACEHOLDER, "your gateway VIRTUAL key — never a real Google key"),
-        ("GOOGLE_GEMINI_BASE_URL", "${root}", "gateway ROOT — no /v1beta: the SDK adds /v1beta/models/... itself"),
+        ("GEMINI_API_KEY", KEY_PLACEHOLDER, "your gateway VIRTUAL key - never a real Google key"),
+        ("GOOGLE_GEMINI_BASE_URL", "${root}", "gateway ROOT - no /v1beta: the SDK adds /v1beta/models/... itself"),
     ],
     "endpoint": "POST ${root}/v1beta/models/<model>:generateContent",
     "model": "gemini-2.5-flash",
@@ -229,6 +294,7 @@ def setup_for(provider: str, gateway_root: str) -> dict:
         "provider": provider,
         "label": d["label"],
         "sdk": d["sdk"],
+        "intro": d.get("intro", ""),
         "install": d["install"],
         "gateway_url": root,
         "base_url": root + d["url_suffix"],
@@ -236,6 +302,8 @@ def setup_for(provider: str, gateway_root: str) -> dict:
         "env_vars": env,
         "env_file": env_file,
         "code": d["code"].substitute(sub),
+        "alt_title": d.get("alt_title", ""),
+        "alt_code": d["alt_code"].substitute(sub) if "alt_code" in d else "",
         "model_example": d["model"],
         "notes": list(d["notes"]),
         "requirements": [r.format(provider=provider, label=d["label"]) for r in _REQUIREMENTS],

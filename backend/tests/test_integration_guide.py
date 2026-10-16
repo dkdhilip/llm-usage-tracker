@@ -85,17 +85,21 @@ def test_every_setup_is_complete_and_secret_free(provider):
     for field in ("label", "sdk", "install", "gateway_url", "base_url", "endpoint", "env_file", "code", "model_example"):
         assert s[field], field
     assert "vk_..." in s["env_file"] and s["env_vars"][0]["value"] == "vk_..."
-    assert not REAL_LOOKING_KEY.search(s["env_file"] + s["code"] + " ".join(s["notes"]))
-    assert "sk-" not in s["env_file"] + s["code"]  # never invites a provider key
+    text = s["env_file"] + s["code"] + s["alt_code"] + s["intro"] + " ".join(s["notes"])
+    assert not REAL_LOOKING_KEY.search(text)
+    assert "sk-" not in s["env_file"] + s["code"] + s["alt_code"]  # never invites a provider key
     assert len(s["requirements"]) == 4 and provider in s["requirements"][0]
     assert any("never put it in your application" in r for r in s["requirements"])
     assert "load_dotenv" in s["code"] and s["env_vars"][0]["name"] in s["code"] + s["env_file"]
 
 
-@pytest.mark.parametrize("provider", integration.PROVIDERS)
-def test_every_snippet_loads_only_the_project_env_and_passes_key_and_url_explicitly(provider):
+EXPLICIT_SNIPPETS = [("anthropic", "code"), ("gemini", "code")]  # unchanged: their project .env wins, key+URL explicit
+
+
+@pytest.mark.parametrize(("provider", "field"), EXPLICIT_SNIPPETS)
+def test_anthropic_and_gemini_snippets_load_only_the_project_env_and_pass_key_and_url_explicitly(provider, field):
     s = integration.setup_for(provider, "https://gw.example.com")
-    code = s["code"]
+    code = s[field]
     key_var, url_var = (e["name"] for e in s["env_vars"])
     assert 'load_dotenv(Path.cwd() / ".env", override=True)' in code
     assert "load_dotenv(override=True)" not in code  # the form that walks up parent directories
@@ -103,7 +107,146 @@ def test_every_snippet_loads_only_the_project_env_and_passes_key_and_url_explici
     # fails closed, naming the missing variable, BEFORE the SDK client is built (so no provider host is contacted)
     assert f'("{key_var}", "{url_var}")' in code and "raise RuntimeError" in code
     assert code.index("raise RuntimeError") < code.index("client = ")
-    assert "Path.cwd()" in " ".join(s["notes"]) or "never a parent" in " ".join(s["notes"])
+    assert "never a parent" in code + " ".join(s["notes"])
+
+
+# ------------------------------------------------------------------ OpenAI: environment-based configuration first
+
+OPENAI_SNIPPET_FIELDS = ["code", "alt_code"]  # the standard snippet and the explicit alternative: equivalent safety
+
+
+def _raise_statements(code: str) -> list[str]:
+    """The full text of every `raise RuntimeError(...)` in a snippet."""
+    out, i = [], 0
+    while (i := code.find("raise RuntimeError(", i)) != -1:
+        depth, first_paren = 0, code.index("(", i)
+        for j in range(first_paren, len(code)):
+            depth += code[j] == "("
+            depth -= code[j] == ")"
+            if depth == 0:
+                break
+        out.append(code[i : j + 1])
+        i = j + 1
+    return out
+
+
+@pytest.mark.parametrize("field", OPENAI_SNIPPET_FIELDS)
+def test_openai_snippets_let_the_real_environment_win_and_validate_before_building_the_client(field):
+    code = integration.setup_for("openai", "https://gw.example.com")[field]
+    assert 'load_dotenv(Path.cwd() / ".env")' in code  # this project's .env only, no walk-up
+    assert "override=" not in code  # real environment variables (shell, Docker, CI, platform) always win
+    assert 'startswith("vk_")' in code and 'os.environ.get("OPENAI_BASE_URL")' in code
+    guards = _raise_statements(code)
+    assert len(guards) == 2  # one for a missing / non-virtual key, one for a missing base URL
+    build = code.index("client = OpenAI(")
+    assert all(code.index(g) < build for g in guards)  # validated BEFORE the client exists
+    for g in guards:  # clear and actionable, and never able to show the key
+        assert "os.environ" not in g and "{" not in g and "f\"" not in g
+    assert "is missing or is not a gateway virtual key (vk_...)" in guards[0] and "unset it" in guards[0]
+    assert "OPENAI_BASE_URL is not set" in guards[1] and "api.openai.com" in guards[1]
+
+
+def test_openai_primary_snippet_is_the_standard_environment_based_client():
+    code = integration.setup_for("openai", "https://gw.example.com")["code"]
+    assert "client = OpenAI()" in code  # the developer's existing code, unchanged
+    assert "api_key=" not in code and "base_url=" not in code  # nothing overrides the environment
+    assert "does NOT read .env itself" in code  # the loading requirement is stated where the code is
+    assert "Real environment variables win over .env" in code
+
+
+def test_openai_explicit_alternative_passes_key_and_url_after_the_same_checks():
+    s = integration.setup_for("openai", "https://gw.example.com")
+    assert s["alt_title"].startswith("3b. Alternative: explicit configuration")
+    assert 'OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ["OPENAI_BASE_URL"])' in s["alt_code"]
+    assert _raise_statements(s["alt_code"]) == _raise_statements(s["code"])  # identical safety checks
+
+
+def test_openai_guide_says_to_replace_the_key_and_add_the_base_url():
+    s = integration.setup_for("openai", "https://gw.example.com")
+    assert "replace your existing OPENAI_API_KEY with this virtual key and add OPENAI_BASE_URL" in s["intro"]
+    assert "existing client = OpenAI() code" in s["intro"] and "note on model names" in s["intro"]
+    assert "does not redirect anything" in s["intro"] and "OPENAI_BASE_URL is what points the SDK" in s["intro"]
+    key_line, url_line = s["env_vars"]
+    assert key_line["comment"].startswith("REPLACES your existing OPENAI_API_KEY") and "never a real OpenAI key" in key_line["comment"]
+    assert url_line["comment"].startswith("NEW") and url_line["value"] == "https://gw.example.com/v1"
+    assert "# REPLACES your existing OPENAI_API_KEY" in s["env_file"] and "# NEW" in s["env_file"]
+
+
+def test_openai_notes_cover_loading_precedence_production_the_guard_and_model_names():
+    notes = " ".join(integration.setup_for("openai", "https://gw.example.com")["notes"])
+    assert "Both variables are required" in notes
+    assert "never reads .env itself" in notes and "process environment" in notes  # loaded by the app, or already set
+    # development versus production
+    assert "real environment variables win over .env" in notes
+    assert "Use .env for local development" in notes and "do not ship a .env file" in notes
+    # the guard, and what it cannot do for code the developer wrote
+    assert 'starts with vk_' in notes and "The error never shows the key" in notes
+    assert "keep an equivalent check" in notes and "default to api.openai.com" in notes
+    assert "api_key= and base_url=" in notes and "take precedence over the environment" in notes
+    # model names: a bare name needs a default provider, which a dashboard-created key does not have
+    assert "bare model name such as gpt-4o-mini" in notes
+    assert "works only if the virtual key has a default provider" in notes
+    assert "created from the dashboard has no default provider" in notes
+    assert "openai/ prefix" in notes and "422" in notes
+    assert "automatically" not in notes  # the dashboard never sets a default provider: do not claim it does
+
+
+@pytest.mark.parametrize("provider", integration.PROVIDERS)
+def test_everything_a_developer_copies_into_a_file_is_pure_ascii(provider):
+    """The .env block and the code are pasted into files by hand. python-dotenv reads .env as UTF-8 and Python reads
+    source as UTF-8, so a Windows editor or shell that saves cp1252 or UTF-16 turns one stray em dash into a
+    UnicodeDecodeError (.env) or a SyntaxError (code). Keep every copy-ready artifact ASCII; the prose notes, which
+    the UI only displays, may use any character."""
+    s = integration.setup_for(provider, "https://gw.example.com")
+    for field in ("install", "env_file", "code", "alt_code"):
+        stray = sorted({c for c in s[field] if not c.isascii()})
+        assert not stray, f"{provider}.{field} contains non-ASCII characters: {[f'U+{ord(c):04X}' for c in stray]}"
+
+
+def test_a_bare_model_name_needs_a_default_provider_which_a_dashboard_created_key_lacks(
+    client, make_live_key, mock_provider
+):
+    """What the OpenAI guide tells developers about model names, checked against the real gateway."""
+
+    def chat(key: dict, model: str):
+        return client.post(
+            "/v1/chat/completions",
+            json={"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5},
+            headers={"Authorization": f"Bearer {key['key']}"},
+        )
+
+    dashboard_key = make_live_key(allowed_providers=["openai"])  # how the dashboard makes one: no default_provider
+    assert dashboard_key["default_provider"] is None
+    refused = chat(dashboard_key, "gpt-4o-mini")
+    assert refused.status_code == 422 and mock_provider == []  # refused before any provider was contacted
+    assert chat(dashboard_key, "openai/gpt-4o-mini").status_code == 200  # the prefixed form works
+
+    explicit_key = make_live_key(allowed_providers=["openai"], default_provider="openai")
+    assert chat(explicit_key, "gpt-4o-mini").status_code == 200  # only an explicit default provider accepts a bare name
+
+
+@pytest.mark.parametrize(("target", "root"), [("hosted", HOSTED), ("local", "http://127.0.0.1:8000")])
+def test_openai_base_url_ends_in_v1_for_both_gateways(target, root):
+    guide = integration.build_guide(HOSTED, "http://127.0.0.1:8000", target)
+    openai = guide["providers"][0]
+    assert openai["provider"] == "openai" and openai["base_url"] == root + "/v1"
+    assert f"OPENAI_BASE_URL={root}/v1" in openai["env_file"]
+    assert openai["endpoint"] == f"POST {root}/v1/chat/completions"
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "gemini"])
+def test_anthropic_and_gemini_keep_their_own_conventions(provider):
+    """Nothing OpenAI-specific leaks into the other SDKs: no intro, no alternative, no OPENAI_* variables."""
+    s = integration.setup_for(provider, "https://gw.example.com")
+    assert s["intro"] == "" and s["alt_code"] == "" and s["alt_title"] == ""
+    everything = s["env_file"] + s["code"] + " ".join(s["notes"]) + s["endpoint"]
+    assert "OPENAI" not in everything and "OpenAI" not in everything
+    assert s["base_url"] == "https://gw.example.com"  # the bare root: no /v1 forced onto it
+
+
+def test_the_general_notes_still_say_a_key_alone_redirects_nothing():
+    text = " ".join(integration.build_guide(HOSTED, "http://127.0.0.1:8000")["general_notes"])
+    assert "does not redirect an SDK by itself" in text
 
 
 @pytest.mark.parametrize("provider,sdk", [("openai", "openai"), ("anthropic", "anthropic"), ("gemini", "google-genai")])
@@ -180,6 +323,14 @@ def test_the_endpoint_returns_all_three_providers_for_the_hosted_gateway(admin_c
     assert body["target"] == "hosted" and body["gateway_url"] == settings.GATEWAY_PUBLIC_URL
     assert [p["provider"] for p in body["providers"]] == ["openai", "anthropic", "gemini"]
     assert body["providers"][0]["base_url"] == settings.GATEWAY_PUBLIC_URL + "/v1"
+
+
+def test_the_endpoint_returns_the_openai_intro_and_alternative_only_for_openai(admin_client):
+    by_provider = {p["provider"]: p for p in admin_client.get("/api/integration").json()["providers"]}
+    assert "replace your existing OPENAI_API_KEY" in by_provider["openai"]["intro"]
+    assert by_provider["openai"]["alt_code"] and by_provider["openai"]["alt_title"]
+    for other in ("anthropic", "gemini"):
+        assert by_provider[other]["intro"] == "" and by_provider[other]["alt_code"] == ""
 
 
 def test_the_endpoint_switches_to_the_local_gateway(admin_client):

@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IntegrationGuide, keyReadiness } from "./IntegrationGuide";
-import { api, type IntegrationGuideData, type IntegrationTarget } from "../lib/api";
+import { api, type IntegrationGuideData, type IntegrationProvider, type IntegrationTarget } from "../lib/api";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("../lib/api")>();
@@ -17,7 +17,14 @@ const ROOTS: Record<IntegrationTarget, string> = {
 // Mirrors the shape (and the wording that matters) of what GET /api/integration returns.
 function guide(target: IntegrationTarget): IntegrationGuideData {
   const root = ROOTS[target];
-  const mk = (provider: "openai" | "anthropic" | "gemini", label: string, base: string, endpoint: string, notes: string[]) => ({
+  const mk = (
+    provider: "openai" | "anthropic" | "gemini",
+    label: string,
+    base: string,
+    endpoint: string,
+    notes: string[],
+    extra: Partial<IntegrationProvider> = {},
+  ) => ({
     provider,
     label,
     sdk: `${provider} (Python)`,
@@ -31,6 +38,7 @@ function guide(target: IntegrationTarget): IntegrationGuideData {
     model_example: "m",
     notes,
     requirements: [],
+    ...extra,
   });
   return {
     target,
@@ -42,7 +50,12 @@ function guide(target: IntegrationTarget): IntegrationGuideData {
       "Add .env to .gitignore and never commit a key. Real provider credentials belong in the gateway workspace.",
     ],
     providers: [
-      mk("openai", "OpenAI", `${root}/v1`, "/v1/chat/completions", ["The base URL ends in /v1."]),
+      mk("openai", "OpenAI", `${root}/v1`, "/v1/chat/completions", ["The base URL ends in /v1."], {
+        intro:
+          "Already using the OpenAI SDK? In your project's .env, replace your existing OPENAI_API_KEY with this virtual key and add OPENAI_BASE_URL — your existing client = OpenAI() code then talks to the gateway.",
+        alt_title: "3b. Alternative: explicit configuration (fails closed)",
+        alt_code: `# explicit configuration for ${root}\nclient = OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ["OPENAI_BASE_URL"])`,
+      }),
       mk("anthropic", "Anthropic", root, "/v1/messages", ["Ending it in /v1 makes the SDK post to /v1/v1/messages (404)."]),
       mk("gemini", "Gemini", root, "/v1beta/models/<model>:generateContent", ["If GOOGLE_API_KEY is set it overrides GEMINI_API_KEY."]),
     ],
@@ -103,6 +116,45 @@ describe("IntegrationGuide", () => {
     expect(container.textContent).toContain("vk_...");
     expect(container.textContent).not.toContain("SECRET_SHOULD_NEVER_APPEAR");
     expect(container.innerHTML).not.toContain("SECRET_SHOULD_NEVER_APPEAR");
+  });
+
+  it("OpenAI: says to replace the existing key and add the base URL, and keeps an explicit alternative", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    render(<IntegrationGuide keyInfo={READY} configuredProviders={["openai"]} />);
+
+    expect(await screen.findByText(/replace your existing OPENAI_API_KEY with this virtual key and add OPENAI_BASE_URL/)).toBeInTheDocument();
+    expect(screen.getByText(/existing client = OpenAI\(\) code then talks to the gateway/)).toBeInTheDocument();
+    expect(screen.getByText("3. Minimal request")).toBeInTheDocument();
+    expect(screen.getByText("3b. Alternative: explicit configuration (fails closed)")).toBeInTheDocument();
+    expect(screen.getByText(/client = OpenAI\(api_key=os\.environ\["OPENAI_API_KEY"\], base_url=/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Copy 3b. Alternative: explicit configuration (fails closed)" }));
+    expect(writeText).toHaveBeenLastCalledWith(guide("hosted").providers[0].alt_code);
+  });
+
+  it("OpenAI keeps both gateways: the hosted URL and the local URL each end in /v1", async () => {
+    const user = userEvent.setup();
+    render(<IntegrationGuide keyInfo={READY} configuredProviders={["openai"]} />);
+    expect(await screen.findByText(/OPENAI_BASE_URL=https:\/\/gw\.example\.com\/v1$/m)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Local" }));
+    expect(await screen.findByText(/OPENAI_BASE_URL=http:\/\/127\.0\.0\.1:8000\/v1$/m)).toBeInTheDocument();
+    expect(screen.getByText(/explicit configuration for http:\/\/127\.0\.0\.1:8000/)).toBeInTheDocument();
+  });
+
+  it("Anthropic and Gemini are unchanged: no OpenAI intro and no alternative snippet", async () => {
+    const user = userEvent.setup();
+    render(<IntegrationGuide keyInfo={READY} configuredProviders={["openai", "anthropic", "gemini"]} />);
+    await screen.findByText(/Already using the OpenAI SDK/);
+
+    for (const name of ["Anthropic", "Gemini"]) {
+      await user.click(screen.getByRole("tab", { name }));
+      expect(screen.queryByText(/Already using the OpenAI SDK/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^3b\./)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Copy 3b\./ })).not.toBeInTheDocument();
+      expect(screen.getByText("3. Minimal request")).toBeInTheDocument();
+    }
   });
 
   it("shows the warnings: not automatic, shown once, never commit, real keys stay in the gateway", async () => {
