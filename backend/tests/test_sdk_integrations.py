@@ -57,7 +57,7 @@ OPENAI_IDS = ["openai", "openai-explicit"]
 UPSTREAM = {
     "openai": ("https://api.openai.com/v1/chat/completions", "Authorization", "Bearer sk-fake-openai-key-000000"),
     "anthropic": ("https://api.anthropic.com/v1/messages", "x-api-key", "sk-fake-anthropic-key-000000"),
-    "gemini": ("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
                "x-goog-api-key", "sk-fake-gemini-key-000000"),
 }
 # What the dashboard should record for each snippet's model. claude-haiku-4-5 is not in the built-in
@@ -65,7 +65,7 @@ UPSTREAM = {
 RECORDED = {
     "openai": ("gpt-4o-mini", "configured"),
     "anthropic": ("claude-haiku-4-5-20251001", "unknown"),
-    "gemini": ("gemini-2.5-flash", "configured"),
+    "gemini": ("gemini-3.8-flash", "configured"),
 }
 
 
@@ -121,7 +121,7 @@ class FakeProviders:
             return {"candidates": [{"content": {"role": "model", "parts": [{"text": "Hello there, nice to meet you"}]},
                                     "finishReason": "STOP", "index": 0}],
                     "usageMetadata": {"promptTokenCount": 14, "candidatesTokenCount": 6, "totalTokenCount": 20},
-                    "modelVersion": "gemini-2.5-flash"}
+                    "modelVersion": "gemini-3.8-flash"}
         raise AssertionError(f"unexpected provider URL: {url}")
 
 
@@ -338,7 +338,7 @@ def test_without_its_own_env_a_project_never_borrows_a_parent_directorys(
 NAIVE = {  # what an SDK does when it is only handed the key: it heads for the provider's own host
     "openai": 'import os\nfrom openai import OpenAI\nOpenAI(api_key=os.environ["OPENAI_API_KEY"], max_retries=0).chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])\n',
     "anthropic": 'import os\nimport anthropic\nanthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=0).messages.create(model="claude-haiku-4-5-20251001", max_tokens=8, messages=[{"role": "user", "content": "hi"}])\n',
-    "gemini": 'import os\nfrom google import genai\nclient = genai.Client(api_key=os.environ["GEMINI_API_KEY"])\nclient.models.generate_content(model="gemini-2.5-flash", contents="hi")\n',
+    "gemini": 'import os\nfrom google import genai\nclient = genai.Client(api_key=os.environ["GEMINI_API_KEY"])\nclient.models.generate_content(model="gemini-3.8-flash", contents="hi")\n',
 }
 
 
@@ -472,7 +472,7 @@ def _call(provider: str, helper, **options):
         return helper.anthropic_client(**options).messages.create(
             model="claude-haiku-4-5-20251001", max_tokens=5, messages=[{"role": "user", "content": "hi"}])
     client = helper.gemini_client(**options)  # keep the reference
-    return client.models.generate_content(model="gemini-2.5-flash", contents="hi")
+    return client.models.generate_content(model="gemini-3.8-flash", contents="hi")
 
 
 def _status(exc: Exception) -> int:

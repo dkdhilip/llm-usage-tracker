@@ -126,7 +126,7 @@ def test_usage_metadata_extra_fields_captured_in_usage_raw(client, make_live_key
     monkeypatch.setattr("app.providers.send_request", fake_send)
     k = make_live_key(allowed_providers=["gemini"])
     client.post(
-        _gen_url("gemini-2.5-flash"),  # registered in CONFIGURED_PRICING -> cost_source "configured"
+        _gen_url("gemini-3.8-flash"),  # registered in CONFIGURED_PRICING -> cost_source "configured"
         json={"contents": [{"role": "user", "parts": [{"text": "hi"}]}]},
         headers=_goog(k["key"]),
     )

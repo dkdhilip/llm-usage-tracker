@@ -227,7 +227,7 @@ _GEMINI = {
         ("GOOGLE_GEMINI_BASE_URL", "${root}", "gateway ROOT - no /v1beta: the SDK adds /v1beta/models/... itself"),
     ],
     "endpoint": "POST ${root}/v1beta/models/<model>:generateContent",
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.8-flash",
     "code": Template(
         '''import os
 from pathlib import Path
@@ -252,7 +252,7 @@ client = genai.Client(
     http_options=types.HttpOptions(base_url=os.environ["GOOGLE_GEMINI_BASE_URL"]),
 )  # keep a reference to the client
 
-response = client.models.generate_content(model="gemini-2.5-flash", contents="Say hello in five words.")
+response = client.models.generate_content(model="gemini-3.8-flash", contents="Say hello in five words.")
 print(response.text)
 '''
     ),

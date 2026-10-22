@@ -36,7 +36,7 @@ ANTHROPIC_BODY = {
 }
 GEMINI_BODY = {
     "candidates": [{"content": {"role": "model", "parts": [{"text": "Hello there, nice to meet you"}]}, "finishReason": "STOP", "index": 0}],
-    "usageMetadata": {"promptTokenCount": 14, "candidatesTokenCount": 6, "totalTokenCount": 20}, "modelVersion": "gemini-2.5-flash",
+    "usageMetadata": {"promptTokenCount": 14, "candidatesTokenCount": 6, "totalTokenCount": 20}, "modelVersion": "gemini-3.8-flash",
 }
 INSPECT_BODY = {"label": "dev-team", "allow_live": True, "providers": [{"provider": "openai", "ready": True}, {"provider": "anthropic", "ready": False}]}
 
@@ -133,7 +133,7 @@ CASES = [
     # script, path the SDK must hit, header carrying the key, header value, how a pasted URL may end
     ("openai_example.py", "/v1/chat/completions", "authorization", f"Bearer {KEY}"),
     ("anthropic_example.py", "/v1/messages", "x-api-key", KEY),
-    ("gemini_example.py", "/v1beta/models/gemini-2.5-flash:generateContent", "x-goog-api-key", KEY),
+    ("gemini_example.py", "/v1beta/models/gemini-3.8-flash:generateContent", "x-goog-api-key", KEY),
 ]
 
 

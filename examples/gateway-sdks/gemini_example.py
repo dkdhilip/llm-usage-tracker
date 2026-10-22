@@ -7,7 +7,7 @@ from gateway_client import gemini_client
 client = gemini_client()  # keep this reference: the SDK closes its HTTP session when it is collected
 
 response = client.models.generate_content(
-    model=os.environ.get("EXAMPLE_MODEL", "gemini-2.5-flash"),
+    model=os.environ.get("EXAMPLE_MODEL", "gemini-3.8-flash"),
     contents="Say hello in five words.",
 )
 print("model:  ", response.model_version)

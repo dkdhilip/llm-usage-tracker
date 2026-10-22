@@ -29,10 +29,14 @@ CONFIGURED_PRICING: dict[tuple[str, str], Pricing] = {
     ("openrouter", "google/gemma-4-31b-it:free"): {"input": 0.0, "output": 0.0},
     ("openrouter", "google/gemini-2.5-flash-lite"): {"input": 0.10, "output": 0.40},
     ("openrouter", "deepseek/deepseek-chat-v3.1"): {"input": 0.55, "output": 1.65},
-    # Google Gemini via its OpenAI-compatible endpoint (addressed as "gemini/<model>").
-    ("gemini", "gemini-2.5-flash"): {"input": 0.30, "output": 2.50},
-    ("gemini", "gemini-2.5-flash-lite"): {"input": 0.10, "output": 0.40},
-    ("gemini", "gemini-2.5-pro"): {"input": 1.25, "output": 10.00},
+    # Google Gemini (addressed natively, or as "gemini/<model>" through the OpenAI-compatible endpoint). These
+    # are the models Google currently serves to NEW accounts (the 2.5 family now answers 404 "no longer available
+    # to new users"), at Google's paid-tier list prices from ai.google.dev/gemini-api/docs/pricing, checked
+    # 2026-10-22. The Pro rate is the <=200k-token tier (above that Google charges more; this table is flat).
+    # gemini-3.8-flash's rate is listed through 2026-12-31 and is higher from 2027-01-01: update it then.
+    ("gemini", "gemini-3.8-flash"): {"input": 0.75, "output": 3.75},
+    ("gemini", "gemini-3.5-flash-lite"): {"input": 0.30, "output": 2.50},
+    ("gemini", "gemini-3.1-pro-preview"): {"input": 2.00, "output": 12.00},
     # Embeddings bill input tokens only — output is always 0.
     ("openai", "text-embedding-3-small"): {"input": 0.02, "output": 0.0},
     ("openai", "text-embedding-3-large"): {"input": 0.13, "output": 0.0},

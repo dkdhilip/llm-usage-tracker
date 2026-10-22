@@ -172,7 +172,7 @@ client = genai.Client(
     api_key=os.environ["GEMINI_API_KEY"],
     http_options=types.HttpOptions(base_url=os.environ["GOOGLE_GEMINI_BASE_URL"]),
 )  # keep a reference to the client
-print(client.models.generate_content(model="gemini-2.5-flash", contents="hi").text)
+print(client.models.generate_content(model="gemini-3.8-flash", contents="hi").text)
 ```
 
 ### Ambient-environment traps (measured)
@@ -225,7 +225,7 @@ status. For OpenAI and Anthropic the examples print an `id:` — the row's **Req
 Gemini responses carry no id the gateway can reuse, so match those by key label and time.
 
 Cost shows **"unknown"** (never a guessed number) for a model that is not priced. Of the example models,
-`gpt-4o-mini` and `gemini-2.5-flash` are priced; `claude-haiku-4-5-20251001` is not — add its price under
+`gpt-4o-mini` and `gemini-3.8-flash` are priced; `claude-haiku-4-5-20251001` is not — add its price under
 **Workspace → Model pricing** to get a cost for it.
 
 ## What was verified, and how

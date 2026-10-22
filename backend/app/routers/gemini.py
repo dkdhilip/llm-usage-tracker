@@ -10,7 +10,7 @@ unmodified — the SDK's own default path shape is
         api_key="vk_...",
         http_options={"base_url": "https://<host>"},
     )
-    client.models.generate_content(model="gemini-2.0-flash", contents="hi")
+    client.models.generate_content(model="gemini-3.8-flash", contents="hi")
 
 Every request hits the real Gemini API — the client's JSON body is forwarded
 almost verbatim (only `model`, taken from the URL path per Gemini's own REST

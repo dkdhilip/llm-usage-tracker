@@ -492,7 +492,7 @@ client.messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, mess
 # Google GenAI SDK — native generateContent (text, image gen, embeddings)
 from google import genai
 client = genai.Client(api_key="vk_...", http_options={"base_url": "https://<host>"})
-client.models.generate_content(model="gemini-2.5-flash", contents="hi")
+client.models.generate_content(model="gemini-3.8-flash", contents="hi")
 client.models.generate_content(  # image generation — same method, an image-capable model
     model="gemini-2.5-flash-image", contents="a red bicycle",
     config={"response_modalities": ["IMAGE"]},
