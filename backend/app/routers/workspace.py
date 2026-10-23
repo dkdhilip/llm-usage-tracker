@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app import providers, ratelimit
+from app import content_capture, providers, ratelimit
 from app.config import settings
 from app.crypto import encrypt
 from app.db import get_db
@@ -50,6 +50,10 @@ def _throttle_join(ip: str) -> None:
 # ---- bodies ----
 class CreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+
+
+class ContentLoggingBody(BaseModel):
+    enabled: bool
 
 
 class RenameBody(BaseModel):
@@ -180,6 +184,12 @@ def _open_invites(db: Session, workspace_id: int) -> list[dict]:
 def _payload(db: Session, m: Membership) -> dict:
     ws = db.get(Workspace, m.workspace_id)
     body = {"id": ws.id, "name": ws.name, "role": m.role}
+    # Visible to EVERY member (not just admins): people whose traffic is logged should be able to see that it is.
+    body["content_logging"] = {
+        "enabled": bool(ws.content_logging_enabled),
+        "retention_days": settings.CONTENT_RETENTION_DAYS,
+        "updated_at": ws.content_logging_updated_at.isoformat() if ws.content_logging_updated_at else None,
+    }
     if m.is_admin:
         body["members"] = _members_view(db, ws.id)
         body["invites"] = _open_invites(db, ws.id)
@@ -227,6 +237,29 @@ def rename_workspace(
     ws.name = body.name.strip()
     db.commit()
     return _payload(db, m)
+
+
+@router.patch("/content-logging")
+def set_content_logging(
+    body: ContentLoggingBody, db: Session = Depends(get_db), m: Membership = Depends(require_workspace_admin)
+) -> dict:
+    """Turn opt-in prompt/response capture on or off for this workspace (admin only). Turning it off stops
+    new capture; content already stored stays until it expires (30 days max) or is deleted explicitly."""
+    ws = db.get(Workspace, m.workspace_id)
+    ws.content_logging_enabled = body.enabled
+    ws.content_logging_updated_at = datetime.now(UTC)
+    ws.content_logging_updated_by = m.user_id
+    db.commit()
+    content_capture.cleanup_expired(db)  # opportunistic physical deletion of anything already expired
+    return _payload(db, m)
+
+
+@router.delete("/content")
+def delete_stored_content(
+    db: Session = Depends(get_db), m: Membership = Depends(require_workspace_admin)
+) -> dict:
+    """Delete ALL stored prompt/response content of this workspace now (usage analytics are untouched)."""
+    return {"deleted": content_capture.purge_workspace(db, m.workspace_id)}
 
 
 @router.delete("")

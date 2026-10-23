@@ -133,10 +133,17 @@ export interface WorkspaceInvite {
   expires_at: string;
 }
 
+export interface ContentLoggingState {
+  enabled: boolean;
+  retention_days: number;
+  updated_at: string | null;
+}
+
 export interface WorkspaceDetail {
   id: number;
   name: string;
   role: WorkspaceRole;
+  content_logging?: ContentLoggingState;
   members?: WorkspaceMember[];
   invites?: WorkspaceInvite[];
   providers?: WorkspaceProvider[];
@@ -243,6 +250,33 @@ export interface RequestRow {
   status: string;
   prompt_preview: string | null;
   response_preview: string | null;
+  has_content?: boolean;
+}
+
+export type ContentStatus = "available" | "expired" | "not_captured" | "unreadable";
+
+export interface StoredContent {
+  v: number;
+  kind: string;
+  request: Record<string, unknown> & {
+    messages?: { role: string; text: string }[];
+    system?: string;
+    input?: string | string[];
+    prompt?: string;
+  };
+  response: { text: string; summary: string };
+}
+
+export interface RequestContent {
+  usage_id: number;
+  retention_days: number;
+  content_status: ContentStatus;
+  content: StoredContent | null;
+  kind?: string;
+  created_at?: string;
+  expires_at?: string;
+  request_truncated?: boolean;
+  response_truncated?: boolean;
 }
 
 export interface KeyInspect {
@@ -341,6 +375,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ name }),
     }),
+  setContentLogging: (enabled: boolean) =>
+    req<WorkspaceDetail>("/api/workspace/content-logging", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+  deleteStoredContent: () => req<{ deleted: number }>("/api/workspace/content", { method: "DELETE" }),
   deleteWorkspace: () => req<{ deleted: boolean }>("/api/workspace", { method: "DELETE" }),
   leaveWorkspace: () => req<{ left: boolean }>("/api/workspace/leave", { method: "POST" }),
   joinWorkspace: (code: string) =>
@@ -401,9 +441,13 @@ export const api = {
   usageByModel: (qs: string) => req<ByModelRow[]>(`/api/usage/by-model${qs}`),
 
   listRequests: (qs: string) =>
-    req<{ items: RequestRow[]; next_cursor: number | null; bodies_logged: boolean }>(
-      `/api/requests${qs}`,
-    ),
+    req<{
+      items: RequestRow[];
+      next_cursor: number | null;
+      bodies_logged: boolean;
+      content_logging_enabled?: boolean;
+    }>(`/api/requests${qs}`),
+  requestContent: (id: number) => req<RequestContent>(`/api/requests/${id}/content`),
 
   listKeys: () => req<KeyRow[]>("/api/keys"),
   createKey: (input: {

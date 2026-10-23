@@ -764,6 +764,108 @@ function CreateKeyForm({
   );
 }
 
+// ---------- content logging ----------
+function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: () => void }) {
+  const state = ws.content_logging;
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  if (!state) return null;
+
+  const toggle = async () => {
+    const next = !state.enabled;
+    if (
+      next &&
+      !window.confirm(
+        `Store the full prompts and responses of this workspace's requests for ${state.retention_days} days? ` +
+          "Workspace admins will be able to read them, and they may contain personal or sensitive data. " +
+          "Everyone in the workspace can see that this is on.",
+      )
+    )
+      return;
+    setBusy("toggle");
+    setErr(null);
+    setNote(null);
+    try {
+      await api.setContentLogging(next);
+      onChange();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const purge = async () => {
+    if (!window.confirm("Delete all stored prompts and responses of this workspace now? Usage analytics are kept."))
+      return;
+    setBusy("purge");
+    setErr(null);
+    setNote(null);
+    try {
+      const r = await api.deleteStoredContent();
+      setNote(`Deleted ${r.deleted} stored record${r.deleted === 1 ? "" : "s"}.`);
+      onChange();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card title="Prompt & response logging">
+      <div className="space-y-3 text-sm">
+        <p className="text-xs text-fg-muted">
+          Off by default. When on, new requests are stored encrypted with their prompt and response
+          (media, embedding vectors and credentials are never stored) and visible only to workspace
+          admins. Each record is deleted automatically after {state.retention_days} days. Usage
+          analytics are not affected.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={
+              "rounded-full px-2 py-0.5 text-xs font-medium " +
+              (state.enabled
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                : "bg-fill text-fg-muted")
+            }
+          >
+            {state.enabled ? "On" : "Off"}
+          </span>
+          {state.updated_at && (
+            <span className="text-xs text-fg-subtle">
+              changed {new Date(state.updated_at).toLocaleString()}
+            </span>
+          )}
+          <button
+            onClick={toggle}
+            disabled={busy !== null}
+            className="ml-auto rounded-md border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill disabled:opacity-50"
+          >
+            {state.enabled ? "Turn off" : "Turn on"}
+          </button>
+          <button
+            onClick={purge}
+            disabled={busy !== null}
+            className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
+          >
+            Delete stored content
+          </button>
+        </div>
+        {state.enabled === false && (
+          <p className="text-xs text-fg-subtle">
+            Turning it off stops new capture; records already stored stay until they expire or you
+            delete them.
+          </p>
+        )}
+        {note && <div className="text-xs text-fg-muted">{note}</div>}
+        {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+      </div>
+    </Card>
+  );
+}
+
 // ---------- settings ----------
 function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: () => void }) {
   const { refresh: refreshAuth } = useAuth();
@@ -897,6 +999,7 @@ export function Workspace() {
             onChange={refresh}
           />
           <ModelPricingCard rows={pricing} onChange={refresh} />
+          {ws && <ContentLoggingCard ws={ws} onChange={refresh} />}
           {ws && <SettingsCard ws={ws} onChange={refresh} />}
         </div>
         <div className="space-y-4">

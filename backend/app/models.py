@@ -32,6 +32,15 @@ class Workspace(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Opt-in prompt/response capture (see app/content_capture.py). OFF by default; only a workspace admin
+    # can change it. Who/when is kept because the project has no general audit log.
+    content_logging_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    content_logging_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Informational user id, deliberately NOT a foreign key: workspaces <-> users would be a circular FK
+    # (users.workspace_id already points the other way), and a dangling id after a user is deleted is harmless.
+    content_logging_updated_by: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class User(Base):
@@ -283,6 +292,45 @@ class UsageLog(Base):
         Index("ix_usage_logs_provider", "provider"),
         Index("ix_usage_logs_model", "model"),
     )
+
+
+class UsageContent(Base):
+    """Opt-in prompt/response content for ONE usage row (1:1), stored Fernet-encrypted.
+
+    Written only when the workspace has content logging on (workspaces.content_logging_enabled), after the
+    usage row is committed and in its own transaction, so a failure here can never affect the request, the
+    usage row, or any analytics. A missing row is normal: logging was off, the request type is not captured,
+    the per-workspace cap was reached, capture failed, or the content expired. Content is never invented.
+
+    `workspace_id` is denormalised (usage_logs has none) for a strict isolation check and a cheap cascade;
+    `expires_at` is fixed at insert (created_at + CONTENT_RETENTION_DAYS, max 30) and enforced on every read
+    as well as by the sweeps in app.content_capture. Deleting a usage row, key or workspace cascades here."""
+
+    __tablename__ = "usage_content"
+    __table_args__ = (
+        Index("ix_usage_content_expires_at", "expires_at"),
+        Index("ix_usage_content_workspace_id", "workspace_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usage_log_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usage_logs.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # chat | responses | messages | gemini | ...
+    # Fernet(JSON {"v":1,"kind":...,"request":{...},"response":{...}}) — see app.content_capture.
+    content_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    request_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    response_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Sizes of the redacted plaintext before encryption (no content).
+    request_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    response_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class IdempotencyRecord(Base):

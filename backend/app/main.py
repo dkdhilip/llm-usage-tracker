@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Scope
 
-from app import idempotency, providers, ratelimit
+from app import content_capture, idempotency, providers, ratelimit
 from app.config import settings
 from app.csrf import CSRFMiddleware
 from app.db import Base, SessionLocal, engine
@@ -58,6 +58,7 @@ async def lifespan(_: FastAPI):
 
         bootstrap(db)  # schema migration
     idempotency.cleanup_expired_startup()  # sweep expired idempotency records
+    content_capture.cleanup_expired_startup()  # delete stored prompt/response content past its retention
     providers.warm_cache()  # best-effort liveness check for any configured provider
     yield
     providers.close_client()

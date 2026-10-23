@@ -78,6 +78,10 @@ ADMIN_ROUTES = [
     ("get", "/api/workspace/pricing", None),
     ("put", "/api/workspace/pricing", {"provider": "openai", "model": "x", "input_per_1m": 1, "output_per_1m": 1}),
     ("delete", "/api/workspace/pricing/1", None),
+    # opt-in prompt/response content logging (see test_content_capture.py)
+    ("patch", "/api/workspace/content-logging", {"enabled": True}),
+    ("delete", "/api/workspace/content", None),
+    ("get", "/api/requests/1/content", None),
 ]
 
 

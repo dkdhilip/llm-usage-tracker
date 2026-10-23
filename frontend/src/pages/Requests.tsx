@@ -5,6 +5,7 @@ import {
   PROVIDERS,
   type KeyRow,
   type ModelInfo,
+  type RequestContent,
   type RequestRow,
 } from "../lib/api";
 import { Card } from "../components/Card";
@@ -29,6 +30,9 @@ export function Requests() {
   const [more, setMore] = useState(false);
   const [bodiesLogged, setBodiesLogged] = useState(true);
   const [open, setOpen] = useState<RequestRow | null>(null);
+  const [contentLogging, setContentLogging] = useState(false);
+  const [content, setContent] = useState<RequestContent | null>(null);
+  const [contentErr, setContentErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [keys, setKeys] = useState<KeyRow[]>([]);
@@ -74,6 +78,7 @@ export function Requests() {
           setCursor(r.next_cursor);
           setMore(r.next_cursor != null);
           setBodiesLogged(r.bodies_logged);
+          setContentLogging(!!r.content_logging_enabled);
           setError(null);
         })
         .catch((e: Error) => setError(e.message));
@@ -84,6 +89,21 @@ export function Requests() {
   useEffect(() => {
     load(null);
   }, [load, filterKey]);
+
+  // The stored prompt/response is fetched per request, only when the row says it has some.
+  useEffect(() => {
+    setContent(null);
+    setContentErr(null);
+    if (!open?.has_content) return;
+    let live = true;
+    api
+      .requestContent(open.id)
+      .then((c) => live && setContent(c))
+      .catch((e: Error) => live && setContentErr(e.message));
+    return () => {
+      live = false;
+    };
+  }, [open]);
 
   return (
     <div className="space-y-4">
@@ -182,10 +202,10 @@ export function Requests() {
           </button>
         )}
       </div>
-      {!bodiesLogged && (
+      {!bodiesLogged && !contentLogging && (
         <div className="rounded-md border border-line bg-surface-2 px-3 py-2 text-xs text-fg-muted">
-          Prompt / response bodies are not stored (set <code>LOG_BODIES=true</code> to capture
-          truncated previews).
+          Prompts and responses are not stored. Workspace admins can turn on prompt &amp; response
+          logging in the Workspace settings.
         </div>
       )}
 
@@ -295,6 +315,9 @@ export function Requests() {
                 </div>
               ))}
             </dl>
+            {open.has_content && (
+              <StoredContentView content={content} error={contentErr} />
+            )}
             <div className="mt-4 space-y-3">
               <div>
                 <div className="text-xs font-medium text-fg-subtle">Prompt</div>
@@ -312,6 +335,64 @@ export function Requests() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StoredContentView({
+  content,
+  error,
+}: {
+  content: RequestContent | null;
+  error: string | null;
+}) {
+  if (error)
+    return <div className="mt-4 text-xs text-red-600 dark:text-red-400">{error}</div>;
+  if (!content) return <div className="mt-4 text-xs text-fg-subtle">Loading stored content…</div>;
+  if (content.content_status !== "available" || !content.content)
+    return (
+      <div className="mt-4 text-xs text-fg-subtle">
+        {content.content_status === "expired" && `Stored content expired (kept ${content.retention_days} days).`}
+        {content.content_status === "unreadable" && "Stored content can no longer be decrypted."}
+        {content.content_status === "not_captured" && "No content was stored for this request."}
+      </div>
+    );
+  const { request, response } = content.content;
+  const input = Array.isArray(request.input) ? request.input.join("\n") : request.input;
+  return (
+    <div className="mt-4 space-y-3 border-t border-line pt-3">
+      <div className="text-xs font-medium text-fg">
+        Stored content
+        {content.expires_at && (
+          <span className="ml-2 font-normal text-fg-subtle">
+            deleted {new Date(content.expires_at).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+      {request.system && <Block label="System" text={request.system} />}
+      {request.messages?.map((m, i) => <Block key={i} label={m.role} text={m.text} />)}
+      {input && <Block label="Input" text={input} />}
+      {request.prompt && <Block label="Prompt" text={request.prompt} />}
+      <Block label="Response" text={response.text || response.summary || "—"} />
+      {response.text && response.summary && <Block label="Response summary" text={response.summary} />}
+      {(content.request_truncated || content.response_truncated) && (
+        <div className="text-xs text-amber-700 dark:text-amber-400">
+          Truncated:{" "}
+          {[content.request_truncated && "request", content.response_truncated && "response"]
+            .filter(Boolean)
+            .join(" and ")}{" "}
+          exceeded the storage limit.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Block({ label, text }: { label: string; text: string }) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-fg-subtle">{label}</div>
+      <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">{text}</pre>
     </div>
   );
 }

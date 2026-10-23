@@ -1,21 +1,26 @@
 """Request log — recent `usage_logs` rows for the Requests tab. Workspace Admin
 only (a Team Member's view is the Dashboard, scoped to their assigned keys).
 
-Prompt/response previews are only populated when LOG_BODIES=true (off by default)."""
+The `prompt_preview`/`response_preview` fields are the LEGACY global LOG_BODIES feature (off by default). The
+per-workspace, encrypted, 30-day content log is separate: rows carry `has_content`, and the content itself is
+only ever returned by `GET /api/requests/{id}/content` (workspace admin, strict workspace isolation)."""
 
-from datetime import datetime
+import logging
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import Select, select
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from app import content_capture
 from app.config import settings
 from app.db import get_db
-from app.models import UsageLog, VirtualKey
+from app.models import UsageContent, UsageLog, VirtualKey, Workspace
 from app.scoping import Viewer, scope_usage
 from app.workspace import require_workspace_admin
 
 router = APIRouter(prefix="/api", tags=["requests"])
+logger = logging.getLogger("app.content_capture")
 
 
 @router.get("/requests")
@@ -58,6 +63,25 @@ def list_requests(
     has_more = len(rows) > limit
     rows = rows[:limit]
 
+    # Which of these rows have LIVE (unexpired) stored content. Expiry is enforced here, at read time, so an
+    # expired record is never reported even if the physical sweep has not reached it yet.
+    ids = [u.id for u, _label, _prefix in rows]
+    with_content = (
+        set(
+            db.scalars(
+                select(UsageContent.usage_log_id).where(
+                    UsageContent.usage_log_id.in_(ids),
+                    UsageContent.workspace_id == v.workspace_id,
+                    UsageContent.expires_at > func.now(),
+                )
+            )
+        )
+        if ids
+        else set()
+    )
+    if cursor is None:
+        content_capture.cleanup_expired(db)  # opportunistic physical deletion, on first-page loads only
+
     items = [
         {
             "id": u.id,
@@ -80,11 +104,58 @@ def list_requests(
             "status": u.status,
             "prompt_preview": u.prompt_preview,
             "response_preview": u.response_preview,
+            "has_content": u.id in with_content,
         }
         for u, label, prefix in rows
     ]
     return {
         "items": items,
         "next_cursor": items[-1]["id"] if (items and has_more) else None,
-        "bodies_logged": settings.LOG_BODIES,
+        "bodies_logged": settings.LOG_BODIES,  # legacy global flag
+        "content_logging_enabled": bool(
+            db.scalar(select(Workspace.content_logging_enabled).where(Workspace.id == v.workspace_id))
+        ),
+    }
+
+
+@router.get("/requests/{usage_id}/content")
+def get_request_content(
+    usage_id: int,
+    response: Response,
+    db: Session = Depends(get_db),
+    v: Viewer = Depends(require_workspace_admin),
+) -> dict:
+    """The stored prompt/response of ONE request. Workspace admins only; a request from another workspace (or
+    one that does not exist) is a plain 404. Content past its retention is never returned, whether or not the
+    physical sweep has deleted it yet."""
+    usage = db.scalar(scope_usage(select(UsageLog).where(UsageLog.id == usage_id), v))
+    if usage is None:
+        raise HTTPException(404, "request not found")
+    response.headers["Cache-Control"] = "no-store"
+    retention = settings.CONTENT_RETENTION_DAYS
+    now = datetime.now(UTC)
+    row = db.scalar(
+        select(UsageContent).where(UsageContent.usage_log_id == usage_id, UsageContent.workspace_id == v.workspace_id)
+    )
+    base = {"usage_id": usage_id, "retention_days": retention, "content": None}
+    if row is None:
+        # Nothing was stored (logging was off then, an unsupported request type, the workspace cap, or a capture
+        # failure — the reason is not recorded) or it has already been deleted after expiring.
+        aged_out = usage.ts <= now - timedelta(days=retention)
+        return {**base, "content_status": "expired" if aged_out else "not_captured"}
+    if row.expires_at <= now:
+        return {**base, "content_status": "expired"}
+    payload = content_capture.load(row)
+    if payload is None:
+        return {**base, "content_status": "unreadable"}  # e.g. ENCRYPTION_KEY changed since it was stored
+    logger.info("content read: user=%s usage=%s", v.user_id, usage_id)  # who looked; never the content
+    return {
+        **base,
+        "content_status": "available",
+        "content": payload,
+        "kind": row.kind,
+        "created_at": row.created_at.isoformat(),
+        "expires_at": row.expires_at.isoformat(),
+        "request_truncated": row.request_truncated,
+        "response_truncated": row.response_truncated,
     }

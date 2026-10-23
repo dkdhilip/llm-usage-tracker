@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from app import idempotency, providers
+from app import content_capture, idempotency, providers
 from app.adapters import openai_adapter
 from app.db import get_db
 from app.gateway import (
@@ -125,6 +125,7 @@ def chat_completions(
                 api_key=live_key,
                 body=native_body,
                 idem=idem,
+                capture=content_capture.begin(db, vk, "chat", native_body),
             )
             return JSONResponse(response)
 
@@ -148,6 +149,7 @@ def chat_completions(
                 api_key=live_key,
                 body=native_body,
                 idem_record_id=idem.record_id,
+                capture=content_capture.begin(db, vk, "chat", native_body),
             ),
             media_type="text/event-stream",
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
@@ -172,12 +174,15 @@ def chat_completions(
         enforce_workspace_cap(db, vk, provider)
         require_live_ready(db, vk, provider)  # 403 paused / 402 no key
         idempotency.claim(idem)
+        capture = content_capture.begin(db, vk, "chat", body, model=model)
         try:
-            result = run_completion(db, vk, provider, model, prompt)
+            result = run_completion(db, vk, provider, model, prompt, capture=capture)
         except HTTPException as exc:
             idempotency.finalize_or_release_http_error(idem, exc)
             raise
-        row = record_usage(db, vk, provider, model, prompt, result, request_id=cid)
+        if capture is not None:
+            capture.set_response_text(result.text)
+        row = record_usage(db, vk, provider, model, prompt, result, request_id=cid, capture=capture)
         resp = {
             "id": cid,
             "object": "chat.completion",
@@ -214,6 +219,7 @@ def chat_completions(
     )
     idem_record_id = stream_idem.record_id
     vk_id = vk.id
+    capture = content_capture.begin(db, vk, "chat", body, model=model)
 
     def event_stream() -> Iterator[str]:
         t0 = time.perf_counter()
@@ -300,8 +306,10 @@ def chat_completions(
         yield "data: [DONE]\n\n"
 
         result = CompletionResult("".join(acc), pt, ct, cost, cost_source, latency_ms)
+        if capture is not None and status == "success":  # an error note is not provider content: request only
+            capture.set_response_text(result.text)
         record_usage_detached(
-            vk_id, provider, model, prompt, result, request_id=cid, status=status
+            vk_id, provider, model, prompt, result, request_id=cid, status=status, capture=capture
         )
         idempotency.release_detached(idem_record_id)  # end of stream => drop the concurrency lock
 

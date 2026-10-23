@@ -329,7 +329,11 @@ are deliberately out of scope for now.)
 | `PROVIDER_CHECK_TTL` | `300` | Seconds to cache a provider liveness check. |
 | `RENDER_GIT_COMMIT` | `""` | Deployed commit SHA, **set automatically by Render** at runtime (Docker included). Surfaced at `GET /version` for drift detection; leave unset locally ⇒ `commit: null`. Never set this by hand. |
 | `RENDER_GIT_BRANCH` | `""` | Deployed branch, set automatically by Render. Surfaced at `GET /version`; unset locally ⇒ `branch: null`. |
-| `LOG_BODIES` | `false` | Store truncated prompt/response previews on `usage_logs` for the Requests tab. Off by default — bodies can be sensitive. |
+| `LOG_BODIES` | `false` | **Legacy**, instance-wide: store 500-char plaintext prompt/response previews on `usage_logs`. Off by default — bodies can be sensitive. Superseded by the per-workspace "Prompt & response logging" below, which it does not enable. |
+| `CONTENT_RETENTION_DAYS` | `30` | How long stored prompt/response content is kept (1–30; values above 30 are rejected at startup). |
+| `CONTENT_MAX_BYTES` | `32768` | Max stored size per side (request / response) of one record; more is truncated and flagged. |
+| `CONTENT_MAX_FIELD_CHARS` | `8000` | Max characters kept per message / field. |
+| `CONTENT_MAX_ROWS_PER_WORKSPACE` | `2000` | Capture pauses (requests are unaffected) while a workspace holds this many unexpired records. |
 | `MODEL_PRICING_OVERRIDES_PATH` | `""` | Optional path to a JSON file of extra `{provider, model, input, output}` price entries, merged over the built-in table at startup — price a newly released model without a code deploy. A missing/malformed file is silently ignored. |
 | `IDEMPOTENCY_TTL_HOURS` | `24` | How long a stored `Idempotency-Key` result is replayable before it expires and an identical request is treated as fresh (`app/idempotency.py`). |
 | `IDEMPOTENCY_MAX_REPLAY_BYTES` | `262144` | Max response body stored (encrypted) for replay. A larger response (big base64 image, long audio) is recorded terminal-but-**not** replayable — no double-charge, but a retry gets a 409 rather than a wrong empty body. |
@@ -375,7 +379,10 @@ script-readable (the SPA echoes it) but is otherwise `Lax`/`Secure` like the ses
 | POST | `/api/keys` | admin | `{label, allowed_providers[], allow_live?, default_provider?, assigned_user_id?, monthly_budget_usd?, budget_period?(day\|week\|month\|custom), budget_start?, budget_end?, expires_at?, allowed_models?{provider:[model]}}` → raw key once |
 | GET | `/api/keys` | member | admin → every key in the workspace (+ `assigned_username`); member → only keys assigned to them |
 | PATCH `\|` DELETE | `/api/keys/{id}` | admin | patch (budget, `allow_live`, `assigned_user_id`/`clear_assignment`) / revoke |
-| GET | `/api/requests` | admin | recent request log (`?limit&cursor&provider&model&key_id&status&start&end`) |
+| GET | `/api/requests` | admin | recent request log (`?limit&cursor&provider&model&key_id&status&start&end`); rows carry `has_content` |
+| GET | `/api/requests/{id}/content` | admin | the stored prompt/response of one request (`content_status`: `available` / `expired` / `not_captured` / `unreadable`); `Cache-Control: no-store`; another workspace's id is a 404 |
+| PATCH | `/api/workspace/content-logging` | admin | `{enabled}` — turn prompt/response logging on/off for the workspace (default off) |
+| DELETE | `/api/workspace/content` | admin | delete all stored prompt/response content of the workspace now (usage analytics untouched) |
 | GET | `/api/usage/summary` `\|` `/timeseries` `\|` `/by-key` `\|` `/by-model` | member | dashboard aggregates (`start,end,provider,model,key_id`); admin → whole workspace, member → assigned keys. `summary` adds `latency_p50_ms`, `latency_p95_ms`, `error_rate`, `tokens_per_sec` |
 | **POST** | **`/v1/chat/completions`** | Bearer `vk_…` | **OpenAI-compatible.** `{model:"<provider>/<slug>", messages[], stream?}`. For `openai`/`openrouter`: full-fidelity passthrough (tools, tool_choice, response_format, multimodal content — the real provider response, untouched). For `anthropic`/`gemini`: legacy translation (flattened prompt, gateway-built envelope). `402` over budget/cap or no provider key, `403` paused / provider or model not on key, `502` upstream failure. |
 | **POST** | **`/v1/messages`** | Bearer `vk_…` | **Anthropic Messages passthrough** (`anthropic` only). `{model, max_tokens, messages[], system?, tools?, stream?, ...}` forwarded almost verbatim → the real Anthropic response. `max_tokens` is required by Anthropic itself — the gateway no longer defaults it. |
@@ -576,6 +583,35 @@ as the next request; the gateway just re-authorizes, re-budgets, and forwards ea
   updated_at, expires_at)`, unique on `(key_id, idempotency_key)`. Backs `Idempotency-Key` replay —
   see "Idempotency" under Reliability. Scoped to the virtual key, so a key from another key/workspace
   can never retrieve this row; the stored response body is encrypted at rest.
+
+- **usage_content** — `(id, usage_log_id → usage_logs (`ON DELETE CASCADE`, unique), workspace_id →
+  workspaces (`ON DELETE CASCADE`), kind, content_encrypted (Fernet), request_truncated,
+  response_truncated, request_bytes, response_bytes, created_at, expires_at)`. Opt-in per workspace
+  (`workspaces.content_logging_enabled`, default false). See "Prompt & response logging" below.
+
+### Prompt & response logging
+
+Off by default; a workspace admin turns it on in **Workspace → Prompt & response logging** (everyone in
+the workspace can see that it is on). While on, each request's prompt and response are stored **after**
+the usage row is committed, in `usage_content`, encrypted with `ENCRYPTION_KEY` (required in deployed
+environments). Capture can never fail or slow a request, and usage analytics (counts, tokens, cost,
+latency, status) are unchanged whether it is on or off.
+
+- **What is stored:** a whitelist per request type (chat, Responses, Messages, Gemini, embeddings, image
+  prompts, speech input, transcription prompt + file name/size) and the response text. Never stored:
+  headers, cookies, virtual or provider keys, unknown request fields, images/audio/base64, embedding
+  vectors, provider error text. Credential-shaped strings (`sk-…`, `vk_…`, `Bearer …`, `AIza…`, JWTs,
+  `password=…`, …) are replaced by `[REDACTED:…]`. Redaction is best-effort, **not** PII scrubbing.
+- **Limits:** per-field and per-side size caps (flagged `truncated`), a per-workspace row cap.
+- **Who can read it:** workspace admins only, one request at a time (`GET /api/requests/{id}/content`);
+  list endpoints never return content.
+- **Retention:** 30 days maximum, enforced on read (expired content is never returned) and physically
+  deleted at startup, opportunistically while capturing/browsing, and when the setting changes. Turning
+  the setting off stops new capture; stored records still expire normally, or an admin can delete them
+  at once. Deleting a key or the workspace removes its content. Usage rows are never deleted by this.
+- **Streaming** responses are observed after each chunk has been forwarded — capture never buffers or
+  delays a stream. A stream the client abandons records nothing (as before).
+- Rotating `ENCRYPTION_KEY` makes already-stored content unreadable (it is reported as such).
 
 ### Model pricing registry
 

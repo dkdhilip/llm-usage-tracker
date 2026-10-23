@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Built-in development defaults. Fine locally; refused when ENVIRONMENT is a
@@ -95,6 +95,19 @@ class Settings(BaseSettings):
     # plus margin — deliberately NOT an arbitrarily short value, so a slow-but-
     # live request is never stolen out from under itself.
     IDEMPOTENCY_INFLIGHT_TIMEOUT_SECONDS: int = 120
+
+    # ---- content logging (app/content_capture.py) ----
+    # Per-workspace and OPT-IN (workspaces.content_logging_enabled, default off): prompts and responses are
+    # stored Fernet-encrypted in `usage_content`, readable only by that workspace's admins, and expire after
+    # CONTENT_RETENTION_DAYS. The retention is capped at 30 days by validation — it cannot be configured longer.
+    # Independent of the legacy global LOG_BODIES flag above.
+    CONTENT_RETENTION_DAYS: int = Field(default=30, ge=1, le=30)
+    # Size limits per stored side (request / response), measured on the redacted UTF-8 text before encryption;
+    # anything beyond is cut and flagged as truncated. A single text field is cut at CONTENT_MAX_FIELD_CHARS.
+    CONTENT_MAX_BYTES: int = Field(default=32_768, ge=1_024, le=262_144)
+    CONTENT_MAX_FIELD_CHARS: int = Field(default=8_000, ge=100, le=100_000)
+    # Capture is skipped (never deleting unexpired content) once a workspace holds this many live rows.
+    CONTENT_MAX_ROWS_PER_WORKSPACE: int = Field(default=2_000, ge=1)
 
     VERSION: str = "0.19.0"
 

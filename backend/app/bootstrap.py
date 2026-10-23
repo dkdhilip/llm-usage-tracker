@@ -124,6 +124,26 @@ def _migrate(db: Session) -> None:
         IdempotencyRecord.__table__.create(bind=db.get_bind(), checkfirst=True)
         db.commit()
 
+    # v11: opt-in content logging. Additive only — three workspace columns (flag defaults OFF; existing
+    # workspaces are untouched) and a brand-new table, which `create_all` normally makes already. Nothing
+    # is backfilled and nothing is deleted.
+    if not _has_col(db, "workspaces", "content_logging_enabled"):
+        db.execute(
+            text("ALTER TABLE workspaces ADD COLUMN content_logging_enabled BOOLEAN NOT NULL DEFAULT false")
+        )
+        db.commit()
+    if not _has_col(db, "workspaces", "content_logging_updated_at"):
+        db.execute(text("ALTER TABLE workspaces ADD COLUMN content_logging_updated_at TIMESTAMPTZ"))
+        db.commit()
+    if not _has_col(db, "workspaces", "content_logging_updated_by"):
+        db.execute(text("ALTER TABLE workspaces ADD COLUMN content_logging_updated_by BIGINT"))
+        db.commit()
+    if not _has_table(db, "usage_content"):
+        from app.models import UsageContent
+
+        UsageContent.__table__.create(bind=db.get_bind(), checkfirst=True)
+        db.commit()
+
 
 def _migrate_v6_workspaces(db: Session) -> None:
     """Runs once, guarded by the presence of the old `users.is_admin` column.

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from app import idempotency
+from app import content_capture, idempotency
 from app.db import get_db
 from app.gateway import (
     authorize_model,
@@ -67,12 +67,19 @@ def proxy_chat(
     # run_completion owns the provider call + error recording but not the final
     # response shape, so claim here and finalize after the response is built.
     idempotency.claim(idem)
+    capture = content_capture.begin(
+        db, vk, "chat",
+        {"messages": body.messages or [{"role": "user", "content": body.prompt}]},
+        model=body.model,
+    )
     try:
-        result = run_completion(db, vk, body.provider, body.model, prompt)
+        result = run_completion(db, vk, body.provider, body.model, prompt, capture=capture)
     except HTTPException as exc:
         idempotency.finalize_or_release_http_error(idem, exc)
         raise
-    row = record_usage(db, vk, body.provider, body.model, prompt, result)
+    if capture is not None:
+        capture.set_response_text(result.text)
+    row = record_usage(db, vk, body.provider, body.model, prompt, result, capture=capture)
 
     resp = ChatResponse(
         request_id=row.request_id,

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app import idempotency
+from app import content_capture, idempotency
 from app.adapters import openai_adapter
 from app.db import get_db
 from app.gateway import (
@@ -68,5 +68,6 @@ def create_embeddings(
         api_key=api_key,
         body=body,
         idem=idem,
+        capture=content_capture.begin(db, vk, "embedding", body),
     )
     return JSONResponse(response)

@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app import idempotency
+from app import content_capture, idempotency
 from app.adapters import openai_adapter
 from app.db import get_db
 from app.gateway import (
@@ -120,6 +120,11 @@ def create_transcription(
         prompt_preview=openai_adapter.transcription_request_preview(form_fields, filename),
         api_key=api_key,
         idem=idem,
+        # the audio itself is never captured: only its name and size, plus the optional text prompt
+        capture=content_capture.begin(
+            db, vk, "transcription",
+            {"model": model, "language": language, "prompt": prompt, "file": {"name": filename, "bytes": len(file_bytes)}},
+        ),
     )
     return Response(content=content, media_type=content_type)
 
@@ -151,5 +156,6 @@ def create_speech(
         prompt_preview=openai_adapter.prompt_preview(body),
         api_key=api_key,
         idem=idem,
+        capture=content_capture.begin(db, vk, "speech", body),
     )
     return Response(content=content, media_type=content_type)

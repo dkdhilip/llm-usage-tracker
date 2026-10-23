@@ -18,7 +18,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import idempotency, providers, ratelimit
+from app import content_capture, idempotency, providers, ratelimit
 from app.adapters.base import UsageInfo
 from app.config import settings
 from app.db import SessionLocal
@@ -423,7 +423,12 @@ def _idem_after_upstream_error(idem: Idem | None, status_code: int, response) ->
 
 
 def run_completion(
-    db: Session, vk: VirtualKey, provider: str, model: str, prompt: str
+    db: Session,
+    vk: VirtualKey,
+    provider: str,
+    model: str,
+    prompt: str,
+    capture: "content_capture.ContentCapture | None" = None,
 ) -> CompletionResult:
     key = require_live_ready(db, vk, provider)
     t0 = time.perf_counter()
@@ -443,7 +448,7 @@ def run_completion(
         failed = CompletionResult(
             f"[{provider} call failed: HTTP {status_code}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt, failed, status="error")
+        record_usage(db, vk, provider, model, prompt, failed, status="error", capture=capture)
         raise HTTPException(
             status_code=status_code,
             detail={
@@ -460,7 +465,7 @@ def run_completion(
         failed = CompletionResult(
             f"[{provider} call failed: {exc}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt, failed, status="error")
+        record_usage(db, vk, provider, model, prompt, failed, status="error", capture=capture)
         raise HTTPException(
             status_code=502,
             detail={
@@ -489,6 +494,7 @@ def run_native_completion(
     api_key: str,
     body: dict,
     idem: Idem | None = None,
+    capture: "content_capture.ContentCapture | None" = None,
 ) -> dict:
     """For the provider-native passthrough endpoints (/v1/messages,
     /v1/responses, and the full-fidelity branch of /v1/chat/completions):
@@ -516,7 +522,7 @@ def run_native_completion(
         failed = CompletionResult(
             f"[{provider} call failed: HTTP {status_code}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error")
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
         _idem_after_upstream_error(idem, status_code, exc.response)
         raise UpstreamHTTPError(
             status_code, exc.response.content, exc.response.headers.get("content-type")
@@ -529,7 +535,7 @@ def run_native_completion(
         failed = CompletionResult(
             f"[{provider} call failed: {exc}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error")
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
         if idem is not None and idem.enabled:
             idempotency.release(idem)  # transport failure => never poison the key
         raise HTTPException(
@@ -546,7 +552,11 @@ def run_native_completion(
     result = completion_result_from_usage(
         usage, provider, model, latency_ms, text=text_preview_fn(response)
     )
-    row = record_usage(db, vk, provider, model, prompt_preview, result, request_id=response.get("id"))
+    if capture is not None:
+        capture.set_response_json(response)
+    row = record_usage(
+        db, vk, provider, model, prompt_preview, result, request_id=response.get("id"), capture=capture
+    )
     if idem is not None and idem.enabled:
         idempotency.finalize_json(idem, response, usage_log_id=row.id)
     return response
@@ -564,6 +574,7 @@ def run_native_completion_raw(
     prompt_preview: str,
     api_key: str,
     idem: Idem | None = None,
+    capture: "content_capture.ContentCapture | None" = None,
 ) -> tuple[bytes, str]:
     """The binary/multipart counterpart of run_native_completion, for the
     audio endpoints: a request that isn't a JSON body (transcription takes a
@@ -586,7 +597,7 @@ def run_native_completion_raw(
         failed = CompletionResult(
             f"[{provider} call failed: HTTP {status_code}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error")
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
         _idem_after_upstream_error(idem, status_code, exc.response)
         raise UpstreamHTTPError(
             status_code, exc.response.content, exc.response.headers.get("content-type")
@@ -597,7 +608,7 @@ def run_native_completion_raw(
         failed = CompletionResult(
             f"[{provider} call failed: {exc}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error")
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
         if idem is not None and idem.enabled:
             idempotency.release(idem)  # transport failure => never poison the key
         raise HTTPException(
@@ -613,7 +624,9 @@ def run_native_completion_raw(
     usage = extract_usage_fn(content, content_type)
     text = preview_fn(content, content_type) if preview_fn else ""
     result = completion_result_from_usage(usage, provider, model, latency_ms, text=text)
-    row = record_usage(db, vk, provider, model, prompt_preview, result)
+    if capture is not None:
+        capture.set_response_bytes(content, content_type)
+    row = record_usage(db, vk, provider, model, prompt_preview, result, capture=capture)
     if idem is not None and idem.enabled:
         idempotency.finalize(
             idem,
@@ -637,6 +650,7 @@ def stream_native_passthrough(
     api_key: str,
     body: dict,
     idem_record_id: int | None = None,
+    capture: "content_capture.ContentCapture | None" = None,
 ) -> Iterator[str]:
     """For the provider-native streaming endpoints: re-emits every line from
     `stream_fn` verbatim (byte-for-byte SSE passthrough, no buffering) while an
@@ -664,6 +678,8 @@ def stream_native_passthrough(
         for line in stream_fn(body, api_key):
             acc.feed(line)
             yield (line + "\n") if line else "\n"
+            if capture is not None:  # observe AFTER the line has gone out: capture never holds the stream back
+                capture.feed_stream_line(line)
     except httpx.HTTPStatusError as exc:
         status = "error"
         status_code = exc.response.status_code
@@ -687,7 +703,9 @@ def stream_native_passthrough(
         providers.breaker_record_success(provider)
     latency_ms = int((time.perf_counter() - t0) * 1000)
     result = completion_result_from_usage(acc.usage(), provider, model, latency_ms)
-    record_usage_detached(vk_id, provider, model, prompt_preview, result, status=status)
+    if capture is not None and status == "success":  # a failed stream stores the request only
+        capture.finish_stream()
+    record_usage_detached(vk_id, provider, model, prompt_preview, result, status=status, capture=capture)
     idempotency.release_detached(idem_record_id)  # end of stream => drop the concurrency lock
 
 
@@ -719,6 +737,7 @@ def record_usage(
     *,
     request_id: str | None = None,
     status: str = "success",
+    capture: "content_capture.ContentCapture | None" = None,
 ) -> UsageLog:
     """Writes the usage_logs row — the one place every code path (native +
     legacy, streaming + non-streaming) converges before persisting, so it's
@@ -769,6 +788,10 @@ def record_usage(
     vk.last_used_at = datetime.now(UTC)
     db.commit()
     db.refresh(row)
+    if capture is not None:
+        # AFTER the usage row is committed, in its own session/transaction, and it never raises: a content
+        # problem cannot affect the request, the usage row, or any analytics.
+        content_capture.store(row.id, capture)
     return row
 
 
@@ -781,6 +804,7 @@ def record_usage_detached(
     *,
     request_id: str | None = None,
     status: str = "success",
+    capture: "content_capture.ContentCapture | None" = None,
 ) -> None:
     """Same as record_usage but opens its own session — for the streaming path,
     which finishes writing after the request's session has been torn down."""
@@ -790,5 +814,5 @@ def record_usage_detached(
             return
         record_usage(
             db, vk, provider, model, prompt, result,
-            request_id=request_id, status=status,
+            request_id=request_id, status=status, capture=capture,
         )
