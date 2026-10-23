@@ -15,31 +15,103 @@ import os
 Pricing = dict[str, float]
 
 CONFIGURED_PRICING: dict[tuple[str, str], Pricing] = {
-    ("openai", "gpt-4o-mini"): {"input": 0.15, "output": 0.60},
-    ("openai", "gpt-4o"): {"input": 2.50, "output": 10.00},
+    # ---- OpenAI ---- (standard tier, short context; developers.openai.com/api/docs/pricing, checked 2026-10-23)
+    ("openai", "gpt-6-astra"): {"input": 10.00, "output": 50.00},
+    ("openai", "gpt-6.1-sol"): {"input": 2.00, "output": 10.00},
+    ("openai", "gpt-6-sol"): {"input": 2.00, "output": 10.00},
+    ("openai", "gpt-6-luna"): {"input": 0.10, "output": 0.50},
+    # gpt-5.6-sol is on a promotional rate listed through at least 2026-11-21: re-check then.
+    ("openai", "gpt-5.6-sol"): {"input": 4.00, "output": 20.00},
+    ("openai", "gpt-5.6-terra"): {"input": 2.00, "output": 12.00},
+    ("openai", "gpt-5.6-luna"): {"input": 0.20, "output": 1.20},
+    ("openai", "gpt-5.5"): {"input": 5.00, "output": 30.00},
+    ("openai", "gpt-5.5-pro"): {"input": 30.00, "output": 180.00},
+    ("openai", "gpt-5.4"): {"input": 2.50, "output": 15.00},
+    ("openai", "gpt-5.4-mini"): {"input": 0.75, "output": 4.50},
+    ("openai", "gpt-5.4-nano"): {"input": 0.20, "output": 1.25},
+    ("openai", "gpt-5.2"): {"input": 1.75, "output": 14.00},
+    ("openai", "gpt-5.1"): {"input": 1.25, "output": 10.00},
+    ("openai", "gpt-5"): {"input": 1.25, "output": 10.00},
+    ("openai", "gpt-5-mini"): {"input": 0.25, "output": 2.00},
+    ("openai", "gpt-5-nano"): {"input": 0.05, "output": 0.40},
+    ("openai", "o3"): {"input": 2.00, "output": 8.00},
     ("openai", "o4-mini"): {"input": 1.10, "output": 4.40},
+    ("openai", "gpt-4.1"): {"input": 2.00, "output": 8.00},
+    ("openai", "gpt-4.1-mini"): {"input": 0.40, "output": 1.60},
+    ("openai", "gpt-4.1-nano"): {"input": 0.10, "output": 0.40},
+    ("openai", "gpt-4o"): {"input": 2.50, "output": 10.00},
+    ("openai", "gpt-4o-mini"): {"input": 0.15, "output": 0.60},
+    # ---- Anthropic ---- (platform.claude.com/docs/en/about-claude/pricing and the models overview, checked
+    # 2026-10-23; the IDs are the Claude API IDs). The Haiku 5.5 rate is the <=100k-token tier: above 100k Anthropic
+    # charges $0.50 in / $2.50 out and this table is flat.
+    ("anthropic", "claude-fable-5-1"): {"input": 10.00, "output": 50.00},
+    ("anthropic", "claude-opus-5-5"): {"input": 4.00, "output": 20.00},
+    ("anthropic", "claude-sonnet-5-5"): {"input": 2.00, "output": 10.00},
+    ("anthropic", "claude-haiku-5-5"): {"input": 0.10, "output": 0.50},
+    # still-available earlier models
+    ("anthropic", "claude-fable-5"): {"input": 10.00, "output": 50.00},
+    ("anthropic", "claude-opus-5"): {"input": 5.00, "output": 25.00},
+    ("anthropic", "claude-opus-4-8"): {"input": 5.00, "output": 25.00},
+    ("anthropic", "claude-opus-4-7"): {"input": 5.00, "output": 25.00},
+    ("anthropic", "claude-opus-4-6"): {"input": 5.00, "output": 25.00},
+    ("anthropic", "claude-opus-4-5"): {"input": 5.00, "output": 25.00},
+    ("anthropic", "claude-sonnet-5"): {"input": 2.00, "output": 10.00},
+    ("anthropic", "claude-sonnet-4-6"): {"input": 3.00, "output": 15.00},
+    ("anthropic", "claude-haiku-4-5"): {"input": 1.00, "output": 5.00},
+    # ---- OpenRouter ---- OpenRouter is itself a gateway; models keep their real vendor-prefixed slugs. Through the
+    # OpenAI-compatible endpoint these are addressed as "openrouter/<slug>". List prices from
+    # openrouter.ai/api/v1/models on 2026-10-23 (USD per 1M tokens); OpenRouter's price for a slug can differ from
+    # the vendor's own and can change, so a real provider-reported charge always wins over this estimate.
+    ("openrouter", "openai/gpt-6.1-sol"): {"input": 2.00, "output": 10.00},
+    ("openrouter", "openai/gpt-6-luna"): {"input": 0.10, "output": 0.50},
+    ("openrouter", "openai/gpt-6-astra"): {"input": 10.00, "output": 50.00},
+    ("openrouter", "openai/gpt-5.6-sol"): {"input": 4.00, "output": 20.00},
+    ("openrouter", "anthropic/claude-fable-5.1"): {"input": 10.00, "output": 50.00},
+    ("openrouter", "anthropic/claude-opus-5.5"): {"input": 4.00, "output": 20.00},
+    ("openrouter", "anthropic/claude-sonnet-5.5"): {"input": 2.00, "output": 10.00},
+    ("openrouter", "anthropic/claude-haiku-5.5"): {"input": 0.10, "output": 0.50},
+    ("openrouter", "google/gemini-4-argon"): {"input": 2.00, "output": 10.00},
+    ("openrouter", "google/gemini-3.8-flash"): {"input": 0.825, "output": 4.125},
+    ("openrouter", "google/gemini-3.5-flash-lite"): {"input": 0.30, "output": 2.50},
+    ("openrouter", "x-ai/grok-4.7"): {"input": 2.00, "output": 6.00},
+    ("openrouter", "deepseek/deepseek-v4.1-flash"): {"input": 0.30, "output": 1.20},
+    ("openrouter", "deepseek/deepseek-v4-pro-0813"): {"input": 0.66, "output": 1.98},
+    ("openrouter", "deepseek/deepseek-chat-v3.1"): {"input": 0.25, "output": 0.95},
+    ("openrouter", "qwen/qwen3.8-max-0902"): {"input": 2.00, "output": 6.00},
+    ("openrouter", "qwen/qwen3.8-flash"): {"input": 0.15, "output": 0.47},
+    ("openrouter", "mistralai/mistral-large-4-0"): {"input": 1.36, "output": 4.18},
+    ("openrouter", "meta-llama/llama-4-maverick"): {"input": 0.1875, "output": 0.6525},
+    ("openrouter", "meta-llama/llama-3.3-70b-instruct"): {"input": 0.10, "output": 0.32},
+    ("openrouter", "google/gemini-2.5-flash-lite"): {"input": 0.10, "output": 0.40},
+    # ":free" slugs make a genuine OpenRouter call at $0 (rate-limited).
+    ("openrouter", "google/gemma-4-31b-it:free"): {"input": 0.0, "output": 0.0},
+    # ---- Google Gemini ---- (addressed natively, or as "gemini/<model>" through the OpenAI-compatible endpoint).
+    # Paid-tier list prices from ai.google.dev/gemini-api/docs/pricing, checked 2026-10-23, for the models Google
+    # serves to NEW accounts (the 2.5 family answers 404 "no longer available to new users", so it is left out).
+    # Dated rates to update when they pass: gemini-4-argon is $2/$10 until 2026-11-30 and $4/$20 from 2026-12-01;
+    # gemini-3.8-flash and gemini-3.6-flash are $0.75/$3.75 until 2026-12-31 and $1.50/$7.50 from 2027-01-01.
+    # The Pro rate is the <=200k-token tier (above that Google charges more; this table is flat).
+    ("gemini", "gemini-4-argon"): {"input": 2.00, "output": 10.00},
+    ("gemini", "gemini-3.8-flash"): {"input": 0.75, "output": 3.75},
+    ("gemini", "gemini-3.6-flash"): {"input": 0.75, "output": 3.75},
+    ("gemini", "gemini-3.5-flash-lite"): {"input": 0.30, "output": 2.50},
+    ("gemini", "gemini-3.1-flash-lite"): {"input": 0.25, "output": 1.50},
+    ("gemini", "gemini-3.1-pro-preview"): {"input": 2.00, "output": 12.00},
+    ("gemini", "gemini-3-flash-preview"): {"input": 0.50, "output": 3.00},
+    # Embeddings bill input tokens only - output is always 0.
+    ("openai", "text-embedding-3-small"): {"input": 0.02, "output": 0.0},
+    ("openai", "text-embedding-3-large"): {"input": 0.13, "output": 0.0},
+    ("openai", "text-embedding-ada-002"): {"input": 0.10, "output": 0.0},
+    ("gemini", "gemini-embedding-2"): {"input": 0.20, "output": 0.0},
+}
+
+# Retired or superseded models. They stay PRICED so old usage rows and existing keys keep an honest cost estimate,
+# but they are left out of models_catalog() so the Playground and GET /api/models only offer current models.
+LEGACY_PRICING: dict[tuple[str, str], Pricing] = {
     ("anthropic", "claude-3-5-haiku"): {"input": 0.80, "output": 4.00},
     ("anthropic", "claude-3-5-sonnet"): {"input": 3.00, "output": 15.00},
     ("anthropic", "claude-3-7-sonnet"): {"input": 3.00, "output": 15.00},
-    # OpenRouter is itself a gateway; models keep their real vendor-prefixed slugs.
-    # Through the OpenAI-compatible endpoint these are addressed as
-    # "openrouter/<slug>", e.g. "openrouter/meta-llama/llama-3.3-70b-instruct".
-    # ":free" slugs make a genuine OpenRouter call at $0 (rate-limited -> graceful sim fallback).
-    ("openrouter", "meta-llama/llama-3.3-70b-instruct"): {"input": 0.10, "output": 0.32},
-    ("openrouter", "google/gemma-4-31b-it:free"): {"input": 0.0, "output": 0.0},
-    ("openrouter", "google/gemini-2.5-flash-lite"): {"input": 0.10, "output": 0.40},
-    ("openrouter", "deepseek/deepseek-chat-v3.1"): {"input": 0.55, "output": 1.65},
-    # Google Gemini (addressed natively, or as "gemini/<model>" through the OpenAI-compatible endpoint). These
-    # are the models Google currently serves to NEW accounts (the 2.5 family now answers 404 "no longer available
-    # to new users"), at Google's paid-tier list prices from ai.google.dev/gemini-api/docs/pricing, checked
-    # 2026-10-22. The Pro rate is the <=200k-token tier (above that Google charges more; this table is flat).
-    # gemini-3.8-flash's rate is listed through 2026-12-31 and is higher from 2027-01-01: update it then.
-    ("gemini", "gemini-3.8-flash"): {"input": 0.75, "output": 3.75},
-    ("gemini", "gemini-3.5-flash-lite"): {"input": 0.30, "output": 2.50},
-    ("gemini", "gemini-3.1-pro-preview"): {"input": 2.00, "output": 12.00},
-    # Embeddings bill input tokens only — output is always 0.
-    ("openai", "text-embedding-3-small"): {"input": 0.02, "output": 0.0},
-    ("openai", "text-embedding-3-large"): {"input": 0.13, "output": 0.0},
+    ("openai", "o3-mini"): {"input": 1.10, "output": 4.40},
 }
 
 
@@ -66,6 +138,7 @@ def _load_overrides() -> dict[tuple[str, str], Pricing]:
 
 
 CONFIGURED_PRICING.update(_load_overrides())
+CONFIGURED_PRICING.update({k: v for k, v in LEGACY_PRICING.items() if k not in CONFIGURED_PRICING})
 
 PROVIDERS = ("openai", "anthropic", "openrouter", "gemini")
 
@@ -139,4 +212,5 @@ def models_catalog() -> list[dict]:
             "output_per_1m": p["output"],
         }
         for (provider, model), p in CONFIGURED_PRICING.items()
+        if (provider, model) not in LEGACY_PRICING  # retired models stay priced but are not offered
     ]

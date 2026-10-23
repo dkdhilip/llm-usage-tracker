@@ -52,9 +52,11 @@ usage and cost on a dashboard. OpenAI · Anthropic · OpenRouter · Google Gemin
 > allow-list (`allowed_models`) — empty means every model of that provider is allowed, the
 > pre-existing default.
 >
-> **Model pricing registry.** A Workspace Admin can price a model their workspace actually uses —
-> a newly released model, a fine-tune, a correction to the built-in estimate — from the Workspace
-> page, no code deploy or JSON-file editing required. It takes precedence over the built-in/JSON
+> **Model pricing registry.** The built-in price table (`backend/app/pricing.py`) lists the current models of
+> all four providers, with the date and source of each price noted beside it; retired models stay priced
+> but are not offered in the Playground. A workspace can still override a model's price through the API
+> (`GET/PUT /api/workspace/pricing`, `DELETE /api/workspace/pricing/{id}`; the Workspace page no longer has a card for it, since the catalog
+> covers the current models). An override takes precedence over the built-in/JSON
 > price table for that workspace's own cost calculations only (`cost_source: "workspace"`);
 > `gateway.record_usage` is the one place every request path resolves this, so it applies
 > uniformly across every endpoint. See "Model pricing registry" below.

@@ -116,6 +116,15 @@ describe("Workspace provider keys", () => {
     expect(screen.queryByText("saved ····1234")).toBeNull();
   });
 
+  it("no longer shows the Model pricing card (the built-in catalog covers the current models)", async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue(ws("workspace"));
+    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    await screen.findByText("saved ····1234");
+    expect(screen.queryByText(/Model pricing/)).toBeNull();
+    expect(screen.queryByText("Add pricing")).toBeNull();
+    expect(api.listModelPricing).not.toHaveBeenCalled(); // and the page no longer fetches the overrides at all
+  });
+
   it("keeps 'replace' working: the field opens, and cancel closes it again", async () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(ws("workspace"));
     const user = userEvent.setup();
