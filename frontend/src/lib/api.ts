@@ -139,11 +139,23 @@ export interface ContentLoggingState {
   updated_at: string | null;
 }
 
+export interface ImageLoggingState {
+  enabled: boolean;
+  updated_at: string | null;
+  // admins only
+  used_bytes?: number;
+  cap_bytes?: number;
+  max_image_bytes?: number;
+  max_per_request?: number;
+  global_full?: boolean;
+}
+
 export interface WorkspaceDetail {
   id: number;
   name: string;
   role: WorkspaceRole;
   content_logging?: ContentLoggingState;
+  image_logging?: ImageLoggingState;
   members?: WorkspaceMember[];
   invites?: WorkspaceInvite[];
   providers?: WorkspaceProvider[];
@@ -265,6 +277,15 @@ export interface StoredContent {
     prompt?: string;
   };
   response: { text: string; summary: string };
+  images_skipped?: { role: "input" | "output"; reason: string }[];
+}
+
+export interface StoredImage {
+  id: number;
+  role: "input" | "output";
+  position: number;
+  mime: string;
+  bytes: number;
 }
 
 export interface RequestContent {
@@ -272,6 +293,7 @@ export interface RequestContent {
   retention_days: number;
   content_status: ContentStatus;
   content: StoredContent | null;
+  images?: StoredImage[];
   kind?: string;
   created_at?: string;
   expires_at?: string;
@@ -447,6 +469,13 @@ export const api = {
       bodies_logged: boolean;
       content_logging_enabled?: boolean;
     }>(`/api/requests${qs}`),
+  setImageLogging: (enabled: boolean) =>
+    req<WorkspaceDetail>("/api/workspace/image-logging", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+  requestImageUrl: (usageId: number, imageId: number) =>
+    `/api/requests/${usageId}/images/${imageId}`,
   requestContent: (id: number) => req<RequestContent>(`/api/requests/${id}/content`),
 
   listKeys: () => req<KeyRow[]>("/api/keys"),

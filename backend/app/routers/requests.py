@@ -12,15 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from app import content_capture
+from app import content_capture, content_images
 from app.config import settings
 from app.db import get_db
-from app.models import UsageContent, UsageLog, VirtualKey, Workspace
+from app.models import UsageContent, UsageContentImage, UsageLog, VirtualKey, Workspace
 from app.scoping import Viewer, scope_usage
 from app.workspace import require_workspace_admin
 
 router = APIRouter(prefix="/api", tags=["requests"])
 logger = logging.getLogger("app.content_capture")
+_IMAGE_MIMES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 
 @router.get("/requests")
@@ -149,7 +150,21 @@ def get_request_content(
     if payload is None:
         return {**base, "content_status": "unreadable"}  # e.g. ENCRYPTION_KEY changed since it was stored
     logger.info("content read: user=%s usage=%s", v.user_id, usage_id)  # who looked; never the content
+    images = db.execute(
+        select(UsageContentImage)
+        .where(
+            UsageContentImage.content_id == row.id,
+            UsageContentImage.workspace_id == v.workspace_id,
+            UsageContentImage.expires_at > func.now(),
+        )
+        .order_by(UsageContentImage.role.desc(), UsageContentImage.position)  # inputs first
+    ).scalars()
     return {
+        # metadata only: the bytes are served by the image endpoint below, never inlined here
+        "images": [
+            {"id": i.id, "role": i.role, "position": i.position, "mime": i.mime, "bytes": i.byte_size}
+            for i in images
+        ],
         **base,
         "content_status": "available",
         "content": payload,
@@ -159,3 +174,46 @@ def get_request_content(
         "request_truncated": row.request_truncated,
         "response_truncated": row.response_truncated,
     }
+
+
+@router.get("/requests/{usage_id}/images/{image_id}")
+def get_request_image(
+    usage_id: int,
+    image_id: int,
+    db: Session = Depends(get_db),
+    v: Viewer = Depends(require_workspace_admin),
+) -> Response:
+    """The bytes of ONE stored image. Workspace admins only, scoped to the viewer's workspace through both the
+    usage row and the image row; a foreign, unknown or EXPIRED image is a plain 404 (expiry is enforced here, not
+    only by the physical sweep). The type served is the one sniffed from the bytes when stored, from a fixed
+    allowlist, and the response cannot execute or be embedded as anything else."""
+    usage = db.scalar(scope_usage(select(UsageLog).where(UsageLog.id == usage_id), v))
+    if usage is None:
+        raise HTTPException(404, "image not found")
+    row = db.scalar(
+        select(UsageContentImage)
+        .join(UsageContent, UsageContent.id == UsageContentImage.content_id)
+        .where(
+            UsageContentImage.id == image_id,
+            UsageContent.usage_log_id == usage_id,
+            UsageContentImage.workspace_id == v.workspace_id,
+            UsageContent.workspace_id == v.workspace_id,
+            UsageContentImage.expires_at > func.now(),
+            UsageContent.expires_at > func.now(),
+        )
+    )
+    data = content_images.load_bytes(row) if row is not None else None
+    if row is None or data is None or row.mime not in _IMAGE_MIMES:
+        raise HTTPException(404, "image not found")
+    logger.info("image read: user=%s usage=%s image=%s", v.user_id, usage_id, image_id)  # never the bytes
+    return Response(
+        content=data,
+        media_type=row.mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": "inline",
+            "Cross-Origin-Resource-Policy": "same-origin",
+        },
+    )

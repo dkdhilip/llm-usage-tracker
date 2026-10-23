@@ -638,7 +638,7 @@ def test_migration_upgrades_an_old_schema_without_touching_existing_data(env):
     c, key, _ = env
     _chat(c, key)  # an existing usage row
     with SessionLocal() as db:
-        db.execute(text("drop table usage_content"))
+        db.execute(text("drop table usage_content_images, usage_content"))  # the images table depends on it
         db.execute(text(
             "alter table workspaces drop column content_logging_enabled, "
             "drop column content_logging_updated_at, drop column content_logging_updated_by"

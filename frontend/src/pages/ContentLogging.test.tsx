@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,13 +24,19 @@ vi.mock("../lib/api", async (importOriginal) => {
       models: vi.fn(),
       listRequests: vi.fn(),
       requestContent: vi.fn(),
+      setImageLogging: vi.fn(),
+      requestImageUrl: (u: number, i: number) => `/api/requests/${u}/images/${i}`,
     },
   };
 });
 
-const workspace = (enabled: boolean) => ({
+const workspace = (enabled: boolean, images = false, used = 0) => ({
   id: 1, name: "Acme", role: "admin" as const, members: [], invites: [], providers: [],
   content_logging: { enabled, retention_days: 30, updated_at: enabled ? "2026-10-20T10:00:00Z" : null },
+  image_logging: {
+    enabled: images, updated_at: null, used_bytes: used, cap_bytes: 50_000_000, max_image_bytes: 2_000_000,
+    max_per_request: 4, global_full: false,
+  },
 });
 
 const row = (id: number, has_content: boolean): RequestRow => ({
@@ -130,5 +136,81 @@ describe("Requests → stored content", () => {
   it("shows the error when the content cannot be loaded", async () => {
     await open([row(10, true)], new Error("forbidden"));
     await screen.findByText("forbidden");
+  });
+});
+
+describe("Workspace -> image storage", () => {
+  it("is off by default, needs its own confirmation, and shows storage use against the cap", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getWorkspace).mockResolvedValue(workspace(true, false, 12_500_000));
+    vi.mocked(api.setImageLogging).mockResolvedValue(workspace(true, true, 12_500_000));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    await screen.findByText("Images off");
+    expect(screen.getByTestId("image-logging").textContent).toContain("12.5 MB of 50 MB");
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");
+
+    await user.click(screen.getByRole("button", { name: "Turn on images" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toMatch(/faces and personal data/);
+    expect(api.setImageLogging).not.toHaveBeenCalled(); // declined
+
+    await user.click(screen.getByRole("button", { name: "Turn on images" }));
+    await waitFor(() => expect(api.setImageLogging).toHaveBeenCalledWith(true));
+    expect(api.setContentLogging).not.toHaveBeenCalled(); // the two switches are independent
+  });
+
+  it("warns when the workspace limit is reached and when text logging is off", async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue(workspace(false, true, 50_000_000));
+    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    await screen.findByText("Images on");
+    expect(screen.getByText(/image limit for this workspace is reached/)).toBeTruthy();
+    expect(screen.getByText(/text logging is currently off/)).toBeTruthy();
+  });
+});
+
+describe("Requests -> images", () => {
+  const withImages = async (content: RequestContent) => {
+    vi.mocked(api.listRequests).mockResolvedValue({
+      items: [row(21, true)], next_cursor: null, bodies_logged: false, content_logging_enabled: true,
+    });
+    vi.mocked(api.requestContent).mockResolvedValue(content);
+    const user = userEvent.setup();
+    render(<MemoryRouter><Requests /></MemoryRouter>);
+    await user.click(await screen.findByText("team-key"));
+  };
+  const base: RequestContent = {
+    usage_id: 21, retention_days: 30, content_status: "available", kind: "chat",
+    content: { v: 1, kind: "chat", request: { messages: [{ role: "user", text: "what is this" }] }, response: { text: "a cat", summary: "" },
+               images_skipped: [{ role: "input", reason: "url_not_stored" }] },
+    images: [
+      { id: 5, role: "input", position: 0, mime: "image/png", bytes: 2048 },
+      { id: 6, role: "output", position: 0, mime: "image/webp", bytes: 4096 },
+    ],
+  };
+
+  it("renders real images from the image endpoint (never inline data) and explains skipped ones", async () => {
+    await withImages(base);
+    const sent = await screen.findByAltText("input image 1");
+    expect(sent.getAttribute("src")).toBe("/api/requests/21/images/5");
+    expect(screen.getByAltText("output image 1").getAttribute("src")).toBe("/api/requests/21/images/6");
+    expect(screen.getByText("Images sent")).toBeTruthy();
+    expect(screen.getByText("Images generated")).toBeTruthy();
+    expect(screen.getByText(/links are never downloaded or stored/)).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(/base64|data:image/);
+  });
+
+  it("falls back to a message when an image fails to load (expired or unreadable)", async () => {
+    await withImages(base);
+    fireEvent.error(await screen.findByAltText("input image 1"));
+    expect(await screen.findByText(/Image unavailable/)).toBeTruthy();
+    expect(screen.getByAltText("output image 1")).toBeTruthy(); // the other image is unaffected
+  });
+
+  it("shows no image section for a text-only record", async () => {
+    await withImages({ ...base, images: [], content: { ...base.content!, images_skipped: undefined } });
+    await screen.findByText("what is this");
+    expect(screen.queryByText("Images sent")).toBeNull();
+    expect(screen.queryByRole("img")).toBeNull();
   });
 });

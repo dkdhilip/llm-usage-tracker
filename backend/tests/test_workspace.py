@@ -82,6 +82,9 @@ ADMIN_ROUTES = [
     ("patch", "/api/workspace/content-logging", {"enabled": True}),
     ("delete", "/api/workspace/content", None),
     ("get", "/api/requests/1/content", None),
+    # opt-in image logging (see test_content_images.py)
+    ("patch", "/api/workspace/image-logging", {"enabled": True}),
+    ("get", "/api/requests/1/images/1", None),
 ]
 
 

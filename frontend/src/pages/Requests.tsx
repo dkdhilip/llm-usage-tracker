@@ -6,6 +6,7 @@ import {
   type KeyRow,
   type ModelInfo,
   type RequestContent,
+  type StoredImage,
   type RequestRow,
 } from "../lib/api";
 import { Card } from "../components/Card";
@@ -316,7 +317,7 @@ export function Requests() {
               ))}
             </dl>
             {open.has_content && (
-              <StoredContentView content={content} error={contentErr} />
+              <StoredContentView content={content} error={contentErr} usageId={open.id} />
             )}
             <div className="mt-4 space-y-3">
               <div>
@@ -339,12 +340,83 @@ export function Requests() {
   );
 }
 
+const SKIP_TEXT: Record<string, string> = {
+  url_not_stored: "image given as a link (links are never downloaded or stored)",
+  not_fetchable: "image referenced by a file id or URI",
+  too_large: "image too large to store",
+  unsupported_type: "not a PNG, JPEG, GIF or WebP image",
+  request_limit: "per-request image limit reached",
+  cap_reached: "image storage limit reached",
+  not_in_stream: "images in streamed responses are not stored",
+};
+
+function ImageThumb({ usageId, img }: { usageId: number; img: StoredImage }) {
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  if (failed)
+    return (
+      <div className="flex h-24 w-24 items-center justify-center rounded border border-line bg-surface-2 p-1 text-center text-[10px] text-fg-subtle">
+        Image unavailable (expired or unreadable)
+      </div>
+    );
+  const url = api.requestImageUrl(usageId, img.id);
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" title={`${img.mime}, ${Math.ceil(img.bytes / 1024)} KB`}>
+      {/* The <img> is always laid out (a display:none image is never fetched by the browser); the pulse
+          placeholder just sits behind it until it has loaded. */}
+      <span className={"relative inline-block rounded " + (loaded ? "" : "min-h-24 min-w-24 animate-pulse bg-fill")}>
+        <img
+          src={url}
+          alt={`${img.role} image ${img.position + 1}`}
+          onLoad={() => setLoaded(true)}
+          onError={() => setFailed(true)}
+          className="block max-h-48 max-w-full rounded border border-line object-contain"
+        />
+      </span>
+    </a>
+  );
+}
+
+function ImagesBlock({ usageId, content }: { usageId: number; content: RequestContent }) {
+  const images = content.images ?? [];
+  const skipped = content.content?.images_skipped ?? [];
+  if (!images.length && !skipped.length) return null;
+  const group = (role: "input" | "output", label: string) => {
+    const imgs = images.filter((i) => i.role === role);
+    const sk = skipped.filter((s) => s.role === role);
+    if (!imgs.length && !sk.length) return null;
+    return (
+      <div>
+        <div className="text-xs font-medium text-fg-subtle">{label}</div>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {imgs.map((i) => (
+            <ImageThumb key={i.id} usageId={usageId} img={i} />
+          ))}
+        </div>
+        {sk.map((s, n) => (
+          <div key={n} className="mt-1 text-xs text-fg-subtle">
+            Not stored: {SKIP_TEXT[s.reason] ?? s.reason}
+          </div>
+        ))}
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-2">
+      {group("input", "Images sent")}
+      {group("output", "Images generated")}
+    </div>
+  );
+}
+
 function StoredContentView({
   content,
   error,
+  usageId,
 }: {
   content: RequestContent | null;
   error: string | null;
+  usageId: number;
 }) {
   if (error)
     return <div className="mt-4 text-xs text-red-600 dark:text-red-400">{error}</div>;
@@ -373,6 +445,7 @@ function StoredContentView({
       {request.messages?.map((m, i) => <Block key={i} label={m.role} text={m.text} />)}
       {input && <Block label="Input" text={input} />}
       {request.prompt && <Block label="Prompt" text={request.prompt} />}
+      <ImagesBlock usageId={usageId} content={content} />
       <Block label="Response" text={response.text || response.summary || "—"} />
       {response.text && response.summary && <Block label="Response summary" text={response.summary} />}
       {(content.request_truncated || content.response_truncated) && (

@@ -26,6 +26,18 @@ def encrypt(plaintext: str) -> str:
     return _fernet().encrypt(plaintext.encode()).decode()
 
 
+def encrypt_bytes(data: bytes) -> bytes:
+    """Fernet token (ASCII bytes, ~1.37x the input) for binary data such as a stored image."""
+    return _fernet().encrypt(data)
+
+
+def decrypt_bytes(token: bytes) -> bytes | None:
+    try:
+        return _fernet().decrypt(bytes(token))
+    except (InvalidToken, ValueError):
+        return None
+
+
 def decrypt(ciphertext: str) -> str | None:
     try:
         return _fernet().decrypt(ciphertext.encode()).decode()

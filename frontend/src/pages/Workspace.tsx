@@ -853,6 +853,7 @@ function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: (
             Delete stored content
           </button>
         </div>
+        <ImageLoggingSection ws={ws} textOn={state.enabled} onChange={onChange} />
         {state.enabled === false && (
           <p className="text-xs text-fg-subtle">
             Turning it off stops new capture; records already stored stay until they expire or you
@@ -863,6 +864,111 @@ function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: (
         {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
       </div>
     </Card>
+  );
+}
+
+const mb = (n: number) =>
+  n > 0 && n < 1_000_000 ? `${Math.ceil(n / 1000)} KB` : `${Number((n / 1_000_000).toFixed(1))} MB`;
+
+function ImageLoggingSection({
+  ws,
+  textOn,
+  onChange,
+}: {
+  ws: WorkspaceDetail;
+  textOn: boolean;
+  onChange: () => void;
+}) {
+  const img = ws.image_logging;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!img) return null;
+  const used = img.used_bytes ?? 0;
+  const cap = img.cap_bytes ?? 0;
+  const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+
+  const toggle = async () => {
+    const next = !img.enabled;
+    if (
+      next &&
+      !window.confirm(
+        "Also store the actual images (pictures sent to vision models and images the model generates)? " +
+          "Images can contain faces and personal data and cannot be redacted. Workspace admins will be able " +
+          "to view them for the retention period. Only PNG, JPEG, GIF and WebP embedded in the request are " +
+          "kept (never downloaded from a link), they are encrypted, and storage is capped.",
+      )
+    )
+      return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.setImageLogging(next);
+      onChange();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-line pt-3" data-testid="image-logging">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-fg">Store images</span>
+        <span
+          className={
+            "rounded-full px-2 py-0.5 text-xs font-medium " +
+            (img.enabled
+              ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+              : "bg-fill text-fg-muted")
+          }
+        >
+          {img.enabled ? "Images on" : "Images off"}
+        </span>
+        <button
+          onClick={toggle}
+          disabled={busy}
+          className="ml-auto rounded-md border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill disabled:opacity-50"
+        >
+          {img.enabled ? "Turn off images" : "Turn on images"}
+        </button>
+      </div>
+      <p className="text-xs text-fg-muted">
+        Separate from text logging and off by default. Needs text logging on to take effect
+        {img.enabled && !textOn ? " (text logging is currently off, so no images are being stored)" : ""}.
+        Images live in the app database, so space is limited
+        {img.max_image_bytes ? ` (up to ${mb(img.max_image_bytes)} per image` : ""}
+        {img.max_per_request ? `, ${img.max_per_request} per request)` : img.max_image_bytes ? ")" : ""}.
+        Links to images are never downloaded or stored.
+      </p>
+      {cap > 0 && (
+        <div>
+          <div className="mb-1 flex justify-between text-xs text-fg-muted">
+            <span>Image storage used</span>
+            <span>
+              {mb(used)} of {mb(cap)}
+            </span>
+          </div>
+          <div
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-1.5 w-full overflow-hidden rounded bg-fill"
+          >
+            <div className={"h-full " + (pct >= 90 ? "bg-red-500" : "bg-brand-600")} style={{ width: `${pct}%` }} />
+          </div>
+          {(used >= cap || img.global_full) && (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              {used >= cap
+                ? "The image limit for this workspace is reached: new images are skipped until old ones expire or are deleted."
+                : "The shared image storage is full: new images are skipped for now."}
+            </p>
+          )}
+        </div>
+      )}
+      {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+    </div>
   );
 }
 

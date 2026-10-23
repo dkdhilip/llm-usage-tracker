@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app import content_capture, providers, ratelimit
+from app import content_capture, content_images, providers, ratelimit
 from app.config import settings
 from app.crypto import encrypt
 from app.db import get_db
@@ -53,6 +53,10 @@ class CreateBody(BaseModel):
 
 
 class ContentLoggingBody(BaseModel):
+    enabled: bool
+
+
+class ImageLoggingBody(BaseModel):
     enabled: bool
 
 
@@ -190,7 +194,21 @@ def _payload(db: Session, m: Membership) -> dict:
         "retention_days": settings.CONTENT_RETENTION_DAYS,
         "updated_at": ws.content_logging_updated_at.isoformat() if ws.content_logging_updated_at else None,
     }
+    # Image logging is its own opt-in; visible to every member for the same transparency reason.
+    body["image_logging"] = {
+        "enabled": bool(ws.image_logging_enabled),
+        "updated_at": ws.image_logging_updated_at.isoformat() if ws.image_logging_updated_at else None,
+    }
     if m.is_admin:
+        used = content_images.usage_bytes(db, ws.id)
+        body["image_logging"].update(
+            used_bytes=used,
+            cap_bytes=settings.CONTENT_IMAGE_MAX_BYTES_PER_WORKSPACE,
+            max_image_bytes=settings.CONTENT_IMAGE_MAX_BYTES,
+            max_per_request=settings.CONTENT_IMAGE_MAX_PER_REQUEST,
+            # the shared-database ceiling, as a yes/no only: other workspaces' usage is not disclosed
+            global_full=content_images.usage_bytes(db) >= settings.CONTENT_IMAGE_MAX_BYTES_TOTAL,
+        )
         body["members"] = _members_view(db, ws.id)
         body["invites"] = _open_invites(db, ws.id)
         body["providers"] = _provider_view(db, ws.id)
@@ -251,6 +269,21 @@ def set_content_logging(
     ws.content_logging_updated_by = m.user_id
     db.commit()
     content_capture.cleanup_expired(db)  # opportunistic physical deletion of anything already expired
+    return _payload(db, m)
+
+
+@router.patch("/image-logging")
+def set_image_logging(
+    body: ImageLoggingBody, db: Session = Depends(get_db), m: Membership = Depends(require_workspace_admin)
+) -> dict:
+    """Turn opt-in IMAGE storage on or off (admin only). Independent of text logging, off by default, and only
+    effective while text logging is also on. Turning it off stops new capture; stored images stay until they
+    expire (30 days max) or the workspace's stored content is deleted."""
+    ws = db.get(Workspace, m.workspace_id)
+    ws.image_logging_enabled = body.enabled
+    ws.image_logging_updated_at = datetime.now(UTC)
+    ws.image_logging_updated_by = m.user_id
+    db.commit()
     return _payload(db, m)
 
 
