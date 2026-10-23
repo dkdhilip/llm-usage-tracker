@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     CONTENT_IMAGE_MAX_REQUEST_BYTES: int = Field(default=6_000_000, ge=10_000, le=40_000_000)
     CONTENT_IMAGE_MAX_BYTES_PER_WORKSPACE: int = Field(default=50_000_000, ge=1_000_000)
     CONTENT_IMAGE_MAX_BYTES_TOTAL: int = Field(default=150_000_000, ge=1_000_000)  # all workspaces: protects the DB
+    # Expired content is hidden on every read at once; this is how often (at most) a signed-in or virtual-key
+    # request also triggers one batch of PHYSICAL deletion, so storage is reclaimed even when logging is off or
+    # traffic is low. (A startup sweep and capture/admin-page sweeps exist as well.)
+    CONTENT_SWEEP_INTERVAL_SECONDS: int = Field(default=3600, ge=60, le=86_400)
 
     VERSION: str = "0.19.0"
 

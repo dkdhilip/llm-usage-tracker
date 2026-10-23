@@ -216,11 +216,15 @@ def response_candidates(kind: str, resp: dict) -> list[Candidate]:
 # ---------------------------------------------------------------------------------------------- storage
 
 
-def usage_bytes(db: Session, workspace_id: int | None = None) -> int:
-    """Unexpired stored bytes: one workspace's, or (workspace_id=None) everyone's."""
-    q = select(func.coalesce(func.sum(UsageContentImage.stored_bytes), 0)).where(
-        UsageContentImage.expires_at > func.now()
-    )
+def usage_bytes(db: Session, workspace_id: int | None = None, *, include_expired: bool = False) -> int:
+    """Stored image bytes: one workspace's, or (workspace_id=None) everyone's.
+
+    By default only LIVE (unexpired) bytes - what the user-facing meter shows. The storage CAPS pass
+    include_expired=True: an expired image that the sweep has not physically deleted yet still occupies the
+    database, so it must count toward the cap or a lagging sweep would let physical usage run past it."""
+    q = select(func.coalesce(func.sum(UsageContentImage.stored_bytes), 0))
+    if not include_expired:
+        q = q.where(UsageContentImage.expires_at > func.now())
     if workspace_id is not None:
         q = q.where(UsageContentImage.workspace_id == workspace_id)
     return int(db.scalar(q) or 0)
@@ -272,8 +276,8 @@ def apply_caps(db: Session, workspace_id: int, staged: list[Prepared]) -> tuple[
     """Workspace and global storage caps. The caller MUST hold the advisory lock (`LOCK_KEY`) in the same
     transaction as the inserts that follow, which makes the caps exact: every concurrent image store sees
     the bytes committed by the one before it."""
-    ws_used = usage_bytes(db, workspace_id)
-    total_used = usage_bytes(db)
+    ws_used = usage_bytes(db, workspace_id, include_expired=True)  # physical, not just live: see usage_bytes
+    total_used = usage_bytes(db, include_expired=True)
     accepted: list[Prepared] = []
     skipped: list[dict] = []
     for img in staged:

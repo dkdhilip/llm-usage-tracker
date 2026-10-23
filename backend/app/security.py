@@ -8,6 +8,7 @@ from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app import content_capture
 from app.config import settings
 from app.db import get_db
 from app.models import User, VirtualKey
@@ -117,7 +118,10 @@ def current_user(
     """The signed-in account, or None. Not a gate."""
     uid = read_session(session)
     if uid is not None:
-        return db.get(User, uid)
+        user = db.get(User, uid)
+        if user is not None:
+            content_capture.maybe_sweep()  # throttled, background, never raises: reclaims expired content
+        return user
     return None
 
 
@@ -164,4 +168,5 @@ def require_virtual_key(
         # Deliberately the same generic message for "never existed", "revoked",
         # and "expired" — don't hand an attacker information about key state.
         raise HTTPException(401, "invalid or revoked virtual key")
+    content_capture.maybe_sweep()  # throttled, background, never raises: reclaims expired content
     return vk
