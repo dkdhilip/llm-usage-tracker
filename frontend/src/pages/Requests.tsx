@@ -319,20 +319,33 @@ export function Requests() {
             {open.has_content && (
               <StoredContentView content={content} error={contentErr} usageId={open.id} />
             )}
-            <div className="mt-4 space-y-3">
-              <div>
-                <div className="text-xs font-medium text-fg-subtle">Prompt</div>
-                <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
-                  {open.prompt_preview ?? "— not stored —"}
-                </pre>
+            {/* The old LOG_BODIES previews: only shown when one actually exists (the flag is off in production,
+                so these used to be two permanent "not stored" boxes under the real stored content). */}
+            {(open.prompt_preview != null || open.response_preview != null) && (
+              <div className="mt-4 space-y-3" data-testid="legacy-previews">
+                {open.prompt_preview != null && (
+                  <div>
+                    <div className="text-xs font-medium text-fg-subtle">Prompt preview</div>
+                    <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
+                      {open.prompt_preview}
+                    </pre>
+                  </div>
+                )}
+                {open.response_preview != null && (
+                  <div>
+                    <div className="text-xs font-medium text-fg-subtle">Response preview</div>
+                    <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
+                      {open.response_preview}
+                    </pre>
+                  </div>
+                )}
               </div>
-              <div>
-                <div className="text-xs font-medium text-fg-subtle">Response</div>
-                <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
-                  {open.response_preview ?? "— not stored —"}
-                </pre>
-              </div>
-            </div>
+            )}
+            {!open.has_content && open.prompt_preview == null && open.response_preview == null && (
+              <p className="mt-4 text-xs text-fg-subtle" data-testid="nothing-stored">
+                No prompt or response was stored for this request.
+              </p>
+            )}
           </div>
         </div>
       )}
