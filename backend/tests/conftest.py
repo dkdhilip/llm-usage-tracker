@@ -134,6 +134,19 @@ def _last_text(json_body: dict) -> str:
     return ""
 
 
+@pytest.fixture(autouse=True)
+def _no_background_sweep(monkeypatch):
+    """The throttled expiry sweep (content_capture.maybe_sweep) would otherwise fire on the first authenticated
+    request of the session and could delete rows a test deliberately left expired. Tests that exercise it reset
+    this state themselves."""
+    import time
+
+    from app import content_capture
+
+    monkeypatch.setattr(content_capture, "_last_sweep", time.monotonic())
+    monkeypatch.setattr(content_capture, "_SWEEP_INLINE", False)
+
+
 @pytest.fixture()
 def mock_provider(monkeypatch):
     """Stub every outbound provider call — both the legacy call_provider /

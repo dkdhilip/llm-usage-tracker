@@ -284,6 +284,7 @@ def set_image_logging(
     ws.image_logging_updated_at = datetime.now(UTC)
     ws.image_logging_updated_by = m.user_id
     db.commit()
+    content_capture.cleanup_expired(db)  # opportunistic physical deletion of anything already expired
     return _payload(db, m)
 
 

@@ -25,6 +25,8 @@ import json
 import logging
 import random
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -44,6 +46,15 @@ KINDS = ("chat", "responses", "messages", "gemini", "embedding", "image", "speec
 _MAX_MESSAGES = 50  # the first system/developer message plus the most recent ones
 _MAX_TOOLS = 50
 _SWEEP_PROBABILITY = 0.02  # share of captures that also run an opportunistic expiry sweep
+_SWEEP_MAX_BATCHES = 20  # one scheduled run deletes at most this many batches (bounded work per trigger)
+_SWEEP_BATCH = 500  # records per scheduled-sweep batch
+_PRESTORE_CLEANUP_LIMIT = 50  # records freed synchronously by an image-bearing request (the sweep does the bulk)
+_SWEEP_RETRY_SECONDS = 300  # after a failed/unstartable sweep, the next attempt is allowed this much later
+
+# Throttled sweep state (see maybe_sweep). `_last_sweep` is a time.monotonic() reading, None = never this boot.
+_last_sweep: float | None = None
+_sweep_lock = threading.Lock()
+_SWEEP_INLINE = False  # tests only: run the sweep in the calling thread instead of a background thread
 _TRUNC = " …[truncated]"
 
 # ---------------------------------------------------------------------------------------------- redaction
@@ -538,6 +549,9 @@ def store(usage_log_id: int, capture: ContentCapture) -> bool:
                     logger.warning("content capture: image staging failed (%s)", type(exc).__name__)
             accepted: list = []
             if staged:
+                # Free expired images first, so the caps below count (almost) only live bytes. This commits, so
+                # it must happen BEFORE the lock, which is held until the commit that stores the new rows.
+                cleanup_expired(db, _PRESTORE_CLEANUP_LIMIT)
                 # One transaction from here to the commit: the lock makes the storage caps exact under
                 # concurrency (it is released by the commit/rollback, and only image-bearing stores take it).
                 try:
@@ -616,34 +630,130 @@ def load(row: UsageContent) -> dict | None:
 # ------------------------------------------------------------------------------------------ retention
 
 
-def cleanup_expired(db: Session, limit: int = 500) -> int:
-    """Delete up to `limit` expired rows. Best-effort; rolls back and returns 0 on any error."""
+def _cleanup_batch(db: Session, limit: int) -> int | None:
+    """Delete up to `limit` expired records (their images go with them: ON DELETE CASCADE). Returns how many
+    were deleted, or None if it FAILED (rolled back, and logged as the exception CLASS and the number of
+    records it was about to delete - never row content, image bytes, keys or the exception message).
+
+    The records are picked in id order and row-locked with FOR UPDATE SKIP LOCKED, in the same transaction as
+    the delete: two sweepers running at once take different records instead of blocking on, or deadlocking
+    over, the same ones, and the returned count is exact. Records another transaction holds locked are simply
+    left for a later sweep. (A new capture never touches these rows - they are expired - so storing images is
+    unaffected.)"""
+    selected = 0
     try:
-        ids = db.scalars(select(UsageContent.id).where(UsageContent.expires_at <= func.now()).limit(limit)).all()
+        ids = db.scalars(
+            select(UsageContent.id)
+            .where(UsageContent.expires_at <= func.now())
+            .order_by(UsageContent.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        ).all()
+        selected = len(ids)
         if not ids:
+            # Nothing selected means nothing locked (FOR UPDATE only locks the rows it returns) and nothing
+            # changed, so there is nothing to release. Do NOT roll back: that would expire every ORM object the
+            # caller has already loaded on this session (e.g. the Requests page rows) and make each one re-query.
             return 0
         db.execute(delete(UsageContent).where(UsageContent.id.in_(ids)))
         db.commit()
         return len(ids)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         db.rollback()
-        return 0
+        logger.warning("content capture: expiry cleanup failed (%s) for %d record(s)", type(exc).__name__, selected)
+        return None
+
+
+def cleanup_expired(db: Session, limit: int = 500) -> int:
+    """Best-effort `_cleanup_batch` for callers that only want a count: returns 0 on any failure (already
+    logged) and never raises. Safe to retry: the next sweep selects whatever is still expired."""
+    return _cleanup_batch(db, limit) or 0
+
+
+def _schedule_retry() -> None:
+    """After a failed or unstartable sweep, allow the next attempt in ~_SWEEP_RETRY_SECONDS instead of a full
+    interval. Fixed spacing (not "on every request"), so a persistent fault costs at most ~12 attempts an
+    hour, and never later than the normal interval."""
+    global _last_sweep
+    interval = settings.CONTENT_SWEEP_INTERVAL_SECONDS
+    with _sweep_lock:
+        _last_sweep = time.monotonic() + min(_SWEEP_RETRY_SECONDS, interval) - interval
+
+
+def _run_sweep() -> None:
+    """One bounded scheduled sweep, in its own session. Never raises; a failure schedules an early retry."""
+    failed = False
+    try:
+        with SessionLocal() as db:
+            removed = 0
+            for _ in range(_SWEEP_MAX_BATCHES):
+                n = _cleanup_batch(db, _SWEEP_BATCH)
+                if n is None:
+                    failed = True
+                    break
+                removed += n
+                if n < _SWEEP_BATCH:
+                    break
+            if removed:
+                logger.info("content capture: scheduled sweep removed %d expired record(s)", removed)
+    except Exception as exc:  # noqa: BLE001
+        failed = True
+        logger.warning("content capture: scheduled sweep failed (%s)", type(exc).__name__)
+    if failed:
+        _schedule_retry()
+
+
+def maybe_sweep() -> bool:
+    """Throttled physical cleanup, triggered from existing authenticated request paths (a signed-in API
+    request, or a gateway request with a valid virtual key) - so expired content is reclaimed even when
+    logging is off or the app sees little traffic, with no scheduler, no new service, and nothing on
+    /healthz. At most one run per CONTENT_SWEEP_INTERVAL_SECONDS; the work itself runs on a short-lived
+    background thread so the request is not delayed. Returns True if a sweep was started. Never raises."""
+    global _last_sweep
+    try:
+        with _sweep_lock:
+            now = time.monotonic()
+            if _last_sweep is not None and now - _last_sweep < settings.CONTENT_SWEEP_INTERVAL_SECONDS:
+                return False
+            _last_sweep = now  # claim the slot first, so concurrent requests start at most one sweep
+        try:
+            if _SWEEP_INLINE:
+                _run_sweep()
+            else:
+                threading.Thread(target=_run_sweep, name="content-sweep", daemon=True).start()
+        except Exception as exc:  # noqa: BLE001 - e.g. the thread could not start
+            logger.warning("content capture: could not start sweep (%s)", type(exc).__name__)
+            _schedule_retry()
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("content capture: could not schedule sweep (%s)", type(exc).__name__)
+        return False
 
 
 def cleanup_expired_startup() -> None:
     """Sweep expired content once at boot. Best-effort; never blocks or fails startup."""
+    global _last_sweep
+    _last_sweep = time.monotonic()  # the boot sweep counts as this interval's run
+    failed = False
     try:
         with SessionLocal() as db:
             removed = 0
             while True:
-                n = cleanup_expired(db, limit=1000)
+                n = _cleanup_batch(db, 1000)
+                if n is None:
+                    failed = True
+                    break
                 removed += n
                 if n < 1000:
                     break
             if removed:
                 logger.info("content capture: removed %d expired record(s) at startup", removed)
     except Exception as exc:  # noqa: BLE001
+        failed = True
         logger.warning("content capture: startup cleanup failed (%s)", type(exc).__name__)
+    if failed:
+        _schedule_retry()  # same early retry as a failed scheduled sweep
 
 
 def purge_workspace(db: Session, workspace_id: int) -> int:

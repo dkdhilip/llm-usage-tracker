@@ -339,6 +339,7 @@ are deliberately out of scope for now.)
 | `CONTENT_IMAGE_MAX_REQUEST_BYTES` | `6000000` | Most encrypted bytes stored for one request. |
 | `CONTENT_IMAGE_MAX_BYTES_PER_WORKSPACE` | `50000000` | Stored image bytes (encrypted size) one workspace may hold; further images are skipped. |
 | `CONTENT_IMAGE_MAX_BYTES_TOTAL` | `150000000` | The same ceiling across ALL workspaces, protecting the shared database. |
+| `CONTENT_SWEEP_INTERVAL_SECONDS` | `3600` | At most how often an authenticated request (signed-in API call or gateway call with a valid virtual key) also runs one batch of physical deletion of expired content/images, so space is reclaimed even when logging is off or traffic is low. Never on `/healthz`. |
 | `MODEL_PRICING_OVERRIDES_PATH` | `""` | Optional path to a JSON file of extra `{provider, model, input, output}` price entries, merged over the built-in table at startup — price a newly released model without a code deploy. A missing/malformed file is silently ignored. |
 | `IDEMPOTENCY_TTL_HOURS` | `24` | How long a stored `Idempotency-Key` result is replayable before it expires and an identical request is treated as fresh (`app/idempotency.py`). |
 | `IDEMPOTENCY_MAX_REPLAY_BYTES` | `262144` | Max response body stored (encrypted) for replay. A larger response (big base64 image, long audio) is recorded terminal-but-**not** replayable — no double-charge, but a retry gets a 409 rather than a wrong empty body. |
@@ -643,8 +644,14 @@ images a model generated, in the request detail panel.
   (BYTEA); a rotated key makes them unreadable. They expire with their text record (30 days max), are deleted
   by the same sweeps, by "Delete stored content", and by key/workspace deletion.
 - **Bounded:** per image, per request, per workspace and global caps (`CONTENT_IMAGE_*`), counted on stored
-  bytes. A reached cap skips the image and records the reason; requests, text capture and analytics are never
-  affected. The Workspace page shows used vs cap.
+  bytes and exact under concurrent requests (a Postgres advisory lock). The caps also count expired images the
+  sweep has not physically deleted yet (they still occupy the database); an image-bearing request first frees
+  expired images. A reached cap skips the image and records the reason; requests, text capture and analytics
+  are never affected. The Workspace page shows live (unexpired) usage vs the cap.
+- **Cleanup:** expired images are hidden at once and physically deleted by a startup sweep, by captures, by the
+  Requests page, by toggling the settings, and by a throttled sweep (`CONTENT_SWEEP_INTERVAL_SECONDS`) that
+  rides on ordinary authenticated requests, with no scheduler or extra service. A failed cleanup is logged
+  (exception class and record count only) and simply retried by the next sweep.
 - **Access:** workspace admins only, one image at a time through the image endpoint; list endpoints never
   contain image bytes or base64. Members can see that image logging is on, not the images.
 - **Storage is finite.** Images live in the same database as everything else (on Neon's free tier the whole
