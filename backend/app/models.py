@@ -134,6 +134,15 @@ class VirtualKey(Base):
     # Null = never expires. Past this instant, require_virtual_key rejects the
     # key with the same generic 401 as a revoked/unknown key (no state leak).
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Per-key content logging (see app/content_capture.py). Both default OFF and are only editable by a workspace
+    # admin. A key is captured only if its WORKSPACE master switch is on as well (workspaces.content_logging_enabled /
+    # image_logging_enabled): effective = workspace AND key. Images additionally require text capture.
+    content_logging_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    image_logging_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     allowed_providers: Mapped[list["AllowedProvider"]] = relationship(
         back_populates="virtual_key",

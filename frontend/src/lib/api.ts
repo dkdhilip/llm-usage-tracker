@@ -137,6 +137,10 @@ export interface ContentLoggingState {
   enabled: boolean;
   retention_days: number;
   updated_at: string | null;
+  // admins only: how many (non-revoked) keys have their own switch on
+  keys_total?: number;
+  keys_logging?: number;
+  keys_logging_images?: number;
 }
 
 export interface ImageLoggingState {
@@ -207,6 +211,9 @@ export interface IntegrationGuideData {
 }
 
 export interface KeyRow {
+  // Per-key content logging (default off). A key is only captured when the workspace master switch is on too.
+  content_logging_enabled?: boolean;
+  image_logging_enabled?: boolean;
   id: number;
   label: string;
   key_prefix: string;
@@ -242,6 +249,8 @@ export interface KeyCreated {
   budget_end: string | null;
   expires_at: string | null;
   created_at: string;
+  content_logging_enabled?: boolean;
+  image_logging_enabled?: boolean;
 }
 
 export interface RequestRow {
@@ -489,6 +498,8 @@ export const api = {
     budget_period?: BudgetPeriod;
     budget_start?: string | null;
     budget_end?: string | null;
+    content_logging_enabled?: boolean;
+    image_logging_enabled?: boolean;
   }) =>
     req<KeyCreated>("/api/keys", {
       method: "POST",
@@ -506,6 +517,8 @@ export const api = {
       budget_start?: string | null;
       budget_end?: string | null;
       clear_budget?: boolean;
+      content_logging_enabled?: boolean;
+      image_logging_enabled?: boolean;
     },
   ) =>
     req<Record<string, unknown>>(`/api/keys/${id}`, {

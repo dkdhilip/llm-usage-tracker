@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +17,7 @@ from app.workspace import Membership, require_membership, require_workspace_admi
 # Workspace Admin manages every key in the workspace; a Team Member only sees the
 # key(s) assigned to them (read-only).
 router = APIRouter(prefix="/api/keys", tags=["keys"])
+logger = logging.getLogger("app.content_capture")
 
 
 def _validate_providers(names: list[str]) -> list[str]:
@@ -122,10 +124,17 @@ def create_key(
         expires_at=body.expires_at,
         allowed_providers=[AllowedProvider(provider=p) for p in providers],
         allowed_models=_build_allowed_models(body.allowed_models, providers),
+        content_logging_enabled=bool(body.content_logging_enabled),
+        image_logging_enabled=bool(body.image_logging_enabled),
     )
     db.add(vk)
     db.commit()
     db.refresh(vk)
+    if vk.content_logging_enabled or vk.image_logging_enabled:
+        logger.info(
+            "key logging set at creation: user=%s key=%s text=%s images=%s",
+            m.user_id, vk.id, vk.content_logging_enabled, vk.image_logging_enabled,
+        )
     return _created(vk, raw)
 
 
@@ -177,6 +186,8 @@ def list_keys(
                 requests=requests,
                 total_tokens=total_tokens,
                 cost=cost,
+                content_logging_enabled=k.content_logging_enabled,
+                image_logging_enabled=k.image_logging_enabled,
             )
         )
     return out
@@ -220,7 +231,19 @@ def update_key(
         vk.allowed_models = []
     elif body.allowed_models is not None:
         vk.allowed_models = _build_allowed_models(body.allowed_models, vk.provider_names())
+    logging_changed = False
+    if body.content_logging_enabled is not None and body.content_logging_enabled != vk.content_logging_enabled:
+        vk.content_logging_enabled = body.content_logging_enabled
+        logging_changed = True
+    if body.image_logging_enabled is not None and body.image_logging_enabled != vk.image_logging_enabled:
+        vk.image_logging_enabled = body.image_logging_enabled
+        logging_changed = True
     db.commit()
+    if logging_changed:  # who changed what, never any content (the project has no general audit log)
+        logger.info(
+            "key logging changed: user=%s key=%s text=%s images=%s",
+            m.user_id, vk.id, vk.content_logging_enabled, vk.image_logging_enabled,
+        )
     return {
         "id": vk.id,
         "allow_live": vk.allow_live,
@@ -231,6 +254,8 @@ def update_key(
         "budget_start": vk.budget_start.isoformat() if vk.budget_start else None,
         "budget_end": vk.budget_end.isoformat() if vk.budget_end else None,
         "expires_at": vk.expires_at.isoformat() if vk.expires_at else None,
+        "content_logging_enabled": vk.content_logging_enabled,
+        "image_logging_enabled": vk.image_logging_enabled,
     }
 
 
@@ -262,4 +287,6 @@ def _created(vk: VirtualKey, raw: str) -> KeyCreated:
         budget_end=vk.budget_end,
         expires_at=vk.expires_at,
         created_at=vk.created_at,
+        content_logging_enabled=vk.content_logging_enabled,
+        image_logging_enabled=vk.image_logging_enabled,
     )

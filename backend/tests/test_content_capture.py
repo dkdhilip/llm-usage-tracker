@@ -28,7 +28,7 @@ ALL = ["openai", "anthropic", "gemini", "openrouter"]
 @pytest.fixture()
 def env(admin_client, make_live_key, mock_provider):
     """The admin's workspace with every provider attached (fake keys) and a live key allowing all of them."""
-    key = make_live_key(allowed_providers=ALL, default_provider="openai")
+    key = make_live_key(allowed_providers=ALL, default_provider="openai", content_logging_enabled=True, image_logging_enabled=True)
     return admin_client, key, mock_provider
 
 
@@ -90,9 +90,11 @@ def _insert_content(usage_id: int, workspace_id: int, hours_from_now: float, kin
 
 def test_default_is_off_and_nothing_is_stored(env):
     c, key, _ = env
-    assert c.get("/api/workspace").json()["content_logging"] == {"enabled": False, "retention_days": 30, "updated_at": None}
+    cl = c.get("/api/workspace").json()["content_logging"]
+    assert {k: cl[k] for k in ("enabled", "retention_days", "updated_at")} == {"enabled": False, "retention_days": 30, "updated_at": None}
+    assert cl["keys_total"] == 1 and cl["keys_logging"] == 1  # the key switch is on, but the workspace master is off
     assert _chat(c, key, content="a private prompt").status_code == 200
-    assert _rows() == []
+    assert _rows() == []  # so nothing is captured: the workspace master switch wins
     item = c.get("/api/requests").json()["items"][0]
     assert item["has_content"] is False
     detail = c.get(f"/api/requests/{item['id']}/content").json()

@@ -532,11 +532,17 @@ function CreateKeyForm({
   onCreated,
   configuredProviders,
   members,
+  masterText,
+  masterImages,
 }: {
   onCreated: () => void;
   configuredProviders: string[];
   members: { user_id: number; username: string }[];
+  masterText?: boolean;
+  masterImages?: boolean;
 }) {
+  const [logText, setLogText] = useState(false);
+  const [logImages, setLogImages] = useState(false);
   const [label, setLabel] = useState("");
   const [allowed, setAllowed] = useState<string[]>([]);
   const [assignee, setAssignee] = useState("");
@@ -583,8 +589,12 @@ function CreateKeyForm({
         budget_period: budgetPeriod,
         budget_start: budgetPeriod === "custom" ? budgetStart || null : null,
         budget_end: budgetPeriod === "custom" ? budgetEnd || null : null,
+        content_logging_enabled: logText,
+        image_logging_enabled: logText && logImages,
       });
       setCreated(res);
+      setLogText(false);
+      setLogImages(false);
       setCopied(false);
       setLabel("");
       setBudget("");
@@ -708,6 +718,39 @@ function CreateKeyForm({
             </label>
           </div>
         )}
+
+        <fieldset className="rounded-md border border-line p-2" data-testid="create-key-logging">
+          <legend className="px-1 text-[11px] font-medium text-fg-muted">Logging for this key (off by default)</legend>
+          <label className="flex items-start gap-2 text-xs text-fg-muted">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={logText}
+              onChange={(e) => {
+                setLogText(e.target.checked);
+                if (!e.target.checked) setLogImages(false);
+              }}
+            />
+            <span>Log prompts &amp; responses for this key (stored encrypted, deleted after the retention period)</span>
+          </label>
+          <label className={"mt-1 flex items-start gap-2 text-xs " + (logText ? "text-fg-muted" : "text-fg-subtle")}>
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={logImages}
+              disabled={!logText}
+              onChange={(e) => setLogImages(e.target.checked)}
+            />
+            <span>Also store images (needs the option above)</span>
+          </label>
+          {(logText && masterText === false) || (logImages && masterImages === false) ? (
+            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+              {logText && masterText === false
+                ? "The workspace's Prompt & response logging is off, so this key won't be logged until an admin turns it on."
+                : "The workspace's image logging is off, so images won't be stored until an admin turns it on."}
+            </p>
+          ) : null}
+        </fieldset>
 
         <p className="text-[11px] text-fg-subtle">
           {willBeLive
@@ -853,6 +896,16 @@ function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: (
             Delete stored content
           </button>
         </div>
+        {state.keys_total !== undefined && (
+          <p className="text-xs text-fg-muted" data-testid="keys-logging-summary">
+            This is the workspace master switch. A key is only logged when this is on <em>and</em> the key's own
+            switch is on (set when creating a key or in the Virtual keys table).{" "}
+            <strong>
+              {state.keys_logging ?? 0} of {state.keys_total} key{state.keys_total === 1 ? "" : "s"}
+            </strong>{" "}
+            currently {state.enabled ? "log" : "have logging switched on (inactive while this is off)"}.
+          </p>
+        )}
         <ImageLoggingSection ws={ws} textOn={state.enabled} onChange={onChange} />
         {state.enabled === false && (
           <p className="text-xs text-fg-subtle">
@@ -939,7 +992,8 @@ function ImageLoggingSection({
         Images live in the app database, so space is limited
         {img.max_image_bytes ? ` (up to ${mb(img.max_image_bytes)} per image` : ""}
         {img.max_per_request ? `, ${img.max_per_request} per request)` : img.max_image_bytes ? ")" : ""}.
-        Links to images are never downloaded or stored.
+        Links to images are never downloaded or stored. Each key also needs its own image switch
+        {img.enabled ? "" : " (inactive while this is off)"}.
       </p>
       {cap > 0 && (
         <div>
@@ -1042,6 +1096,132 @@ function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: () => v
   );
 }
 
+// ---------- per-key logging ----------
+function KeyLoggingPill({
+  k,
+  masterText,
+  masterImages,
+}: {
+  k: KeyRow;
+  masterText?: boolean;
+  masterImages?: boolean;
+}) {
+  const text = !!k.content_logging_enabled;
+  const images = text && !!k.image_logging_enabled;
+  if (!text) return <span className="text-xs text-fg-subtle">Off</span>;
+  const inactive = masterText === false || (images && masterImages === false);
+  return (
+    <span
+      className={
+        "rounded-full px-2 py-0.5 text-[11px] font-medium " +
+        (inactive
+          ? "bg-fill text-fg-muted"
+          : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300")
+      }
+      title={
+        inactive
+          ? "This key's switch is on, but a workspace master switch is off, so nothing is being logged yet."
+          : undefined
+      }
+    >
+      {images ? "Text + images" : "Text"}
+      {inactive ? " (inactive)" : ""}
+    </span>
+  );
+}
+
+function KeyLoggingEditor({
+  k,
+  masterText,
+  masterImages,
+  retentionDays,
+  onChange,
+}: {
+  k: KeyRow;
+  masterText?: boolean;
+  masterImages?: boolean;
+  retentionDays: number;
+  onChange: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const text = !!k.content_logging_enabled;
+  const images = !!k.image_logging_enabled;
+  const who = `${k.label} (${k.key_prefix}…)`;
+
+  async function apply(patch: { content_logging_enabled?: boolean; image_logging_enabled?: boolean }, ask?: string) {
+    if (ask && !window.confirm(ask)) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.updateKey(k.id, patch);
+      onChange();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 text-sm" data-testid={`key-logging-editor-${k.id}`}>
+      <div className="text-xs font-medium text-fg">Logging for {who}</div>
+      <label className="flex items-start gap-2 text-xs text-fg-muted">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={text}
+          disabled={busy}
+          onChange={(e) =>
+            apply(
+              // turning text off also turns images off: images are part of text capture
+              e.target.checked ? { content_logging_enabled: true } : { content_logging_enabled: false, image_logging_enabled: false },
+              e.target.checked
+                ? `Store the full prompts and responses of requests made with ${who} for ${retentionDays} days? ` +
+                    "Workspace admins will be able to read them, and they may contain personal or sensitive data."
+                : undefined,
+            )
+          }
+        />
+        <span>Log prompts &amp; responses for this key</span>
+      </label>
+      <label className={"flex items-start gap-2 text-xs " + (text ? "text-fg-muted" : "text-fg-subtle")}>
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={images}
+          disabled={busy || !text}
+          onChange={(e) =>
+            apply(
+              { image_logging_enabled: e.target.checked },
+              e.target.checked
+                ? `Also store the images sent with, and generated for, requests made with ${who}? ` +
+                    "Images can contain faces and personal data and cannot be redacted."
+                : undefined,
+            )
+          }
+        />
+        <span>Also store images (needs the option above)</span>
+      </label>
+      {text && masterText === false && (
+        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+          The workspace's Prompt &amp; response logging is off, so nothing is logged for this key yet.
+        </p>
+      )}
+      {text && images && masterText !== false && masterImages === false && (
+        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+          The workspace's image logging is off, so images are not being stored yet.
+        </p>
+      )}
+      <p className="text-[11px] text-fg-subtle">
+        Turning an option off stops new capture only; content already stored stays until it expires or an admin
+        deletes the workspace's stored content.
+      </p>
+      {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+    </div>
+  );
+}
+
 // ---------- page ----------
 export function Workspace() {
   const { isWorkspaceAdmin, loading, logout } = useAuth();
@@ -1051,6 +1231,7 @@ export function Workspace() {
   const [defaultCap, setDefaultCap] = useState(5);
   const [error, setError] = useState<string | null>(null);
   const [connectKeyId, setConnectKeyId] = useState<number | null>(null);
+  const [loggingKeyId, setLoggingKeyId] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     api.getWorkspace().then(setWs).catch((e: Error) => setError(e.message));
@@ -1113,6 +1294,8 @@ export function Workspace() {
             onCreated={refresh}
             configuredProviders={configured}
             members={members}
+            masterText={ws?.content_logging?.enabled}
+            masterImages={ws?.image_logging?.enabled}
           />
           {ws && <MembersCard ws={ws} onChange={refresh} />}
         </div>
@@ -1127,6 +1310,7 @@ export function Workspace() {
                 <th className="py-2 pr-4">Prefix</th>
                 <th className="py-2 pr-4">Assigned</th>
                 <th className="py-2 pr-4">Allowed providers</th>
+                <th className="py-2 pr-4">Logging</th>
                 <th className="py-2 pr-4 text-center">Live</th>
                 <th className="py-2 pr-4 text-right">Requests</th>
                 <th className="py-2 pr-4 text-right">Cost</th>
@@ -1138,7 +1322,7 @@ export function Workspace() {
             <tbody>
               {keys.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-fg-subtle">
+                  <td colSpan={11} className="py-8 text-center text-fg-subtle">
                     No keys yet — create one above.
                   </td>
                 </tr>
@@ -1166,6 +1350,13 @@ export function Workspace() {
                         </span>
                       ))}
                     </div>
+                  </td>
+                  <td className="py-2 pr-4" data-testid={`key-logging-${k.id}`}>
+                    <KeyLoggingPill
+                      k={k}
+                      masterText={ws?.content_logging?.enabled}
+                      masterImages={ws?.image_logging?.enabled}
+                    />
                   </td>
                   <td className="py-2 pr-4 text-center">
                     {k.revoked_at ? (
@@ -1237,6 +1428,14 @@ export function Workspace() {
                     ) : (
                       <div className="flex justify-end gap-2">
                         <button
+                          onClick={() => setLoggingKeyId(loggingKeyId === k.id ? null : k.id)}
+                          aria-expanded={loggingKeyId === k.id}
+                          title="Choose whether this key's prompts, responses and images are logged"
+                          className="rounded border border-line px-2 py-1 text-xs text-fg-muted hover:bg-fill"
+                        >
+                          Logging
+                        </button>
+                        <button
                           onClick={() => setConnectKeyId(connectKeyId === k.id ? null : k.id)}
                           aria-expanded={connectKeyId === k.id}
                           title="How to use this key from OpenAI, Anthropic or Gemini code"
@@ -1259,9 +1458,22 @@ export function Workspace() {
                     )}
                   </td>
                 </tr>
+                {loggingKeyId === k.id && !k.revoked_at && (
+                  <tr className="border-b border-line bg-surface-2">
+                    <td colSpan={11} className="px-4 py-3">
+                      <KeyLoggingEditor
+                        k={k}
+                        masterText={ws?.content_logging?.enabled}
+                        masterImages={ws?.image_logging?.enabled}
+                        retentionDays={ws?.content_logging?.retention_days ?? 30}
+                        onChange={refresh}
+                      />
+                    </td>
+                  </tr>
+                )}
                 {connectKeyId === k.id && !k.revoked_at && (
                   <tr className="border-b border-line bg-surface-2">
-                    <td colSpan={10} className="px-4 py-4">
+                    <td colSpan={11} className="px-4 py-4">
                       <IntegrationGuide
                         keyInfo={{ allowed_providers: k.allowed_providers, allow_live: k.allow_live, expires_at: k.expires_at }}
                         configuredProviders={configured}
