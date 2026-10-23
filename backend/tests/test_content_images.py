@@ -33,7 +33,7 @@ def env(admin_client, make_live_key, mock_provider, monkeypatch):
 
     monkeypatch.setattr(httpx.Client, "send", no_fetch)  # nothing but the (mocked) provider seam may go out
     monkeypatch.setattr(httpx, "get", no_fetch)
-    return admin_client, make_live_key(allowed_providers=ALL, default_provider="openai"), mock_provider
+    return admin_client, make_live_key(allowed_providers=ALL, default_provider="openai", content_logging_enabled=True, image_logging_enabled=True), mock_provider
 
 
 def _auth(key):

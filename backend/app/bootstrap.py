@@ -162,6 +162,34 @@ def _migrate(db: Session) -> None:
         UsageContentImage.__table__.create(bind=db.get_bind(), checkfirst=True)
         db.commit()
 
+    # v13: per-key logging switches. Additive only. New keys default OFF. The first time the columns are created,
+    # existing keys INHERIT their workspace's current state once, so nothing that is not logging today starts
+    # logging and a workspace that already logs keeps logging the same keys. The copy runs only in the branch that
+    # creates the column (same transaction), so re-running the migration never re-enables a key an admin turned off.
+    first_run = not _has_col(db, "virtual_keys", "content_logging_enabled")
+    if first_run:
+        db.execute(
+            text("ALTER TABLE virtual_keys ADD COLUMN content_logging_enabled BOOLEAN NOT NULL DEFAULT false")
+        )
+    if not _has_col(db, "virtual_keys", "image_logging_enabled"):
+        db.execute(
+            text("ALTER TABLE virtual_keys ADD COLUMN image_logging_enabled BOOLEAN NOT NULL DEFAULT false")
+        )
+    if first_run:
+        db.execute(
+            text(
+                "UPDATE virtual_keys SET content_logging_enabled = true "
+                "WHERE workspace_id IN (SELECT id FROM workspaces WHERE content_logging_enabled)"
+            )
+        )
+        db.execute(
+            text(
+                "UPDATE virtual_keys SET image_logging_enabled = true "
+                "WHERE workspace_id IN (SELECT id FROM workspaces WHERE image_logging_enabled)"
+            )
+        )
+    db.commit()
+
 
 def _migrate_v6_workspaces(db: Session) -> None:
     """Runs once, guarded by the presence of the old `users.is_admin` column.

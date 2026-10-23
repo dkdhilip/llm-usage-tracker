@@ -25,6 +25,9 @@ class KeyCreate(BaseModel):
     budget_end: date | None = None  # inclusive end date
     expires_at: datetime | None = None  # null = never expires
     allowed_models: AllowedModelsIn | None = None
+    # Per-key content logging: default OFF; also needs the workspace master switches (see VirtualKey)
+    content_logging_enabled: bool = False
+    image_logging_enabled: bool = False
 
 
 class KeyUpdate(BaseModel):
@@ -41,6 +44,8 @@ class KeyUpdate(BaseModel):
     clear_expiry: bool = False
     allowed_models: AllowedModelsIn | None = None
     clear_allowed_models: bool = False
+    content_logging_enabled: bool | None = None
+    image_logging_enabled: bool | None = None
 
 
 class KeyCreated(BaseModel):
@@ -57,6 +62,8 @@ class KeyCreated(BaseModel):
     budget_end: datetime | None
     expires_at: datetime | None
     created_at: datetime
+    content_logging_enabled: bool = False
+    image_logging_enabled: bool = False
 
 
 class KeyOut(BaseModel):
@@ -79,6 +86,8 @@ class KeyOut(BaseModel):
     requests: int
     total_tokens: int
     cost: float
+    content_logging_enabled: bool = False
+    image_logging_enabled: bool = False
 
 
 # ---- providers ----

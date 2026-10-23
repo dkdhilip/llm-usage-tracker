@@ -201,6 +201,15 @@ def _payload(db: Session, m: Membership) -> dict:
     }
     if m.is_admin:
         used = content_images.usage_bytes(db, ws.id)
+        # how many (non-revoked) keys the per-key switches currently capture, for the master cards
+        counts = db.execute(
+            select(
+                func.count(),
+                func.count().filter(VirtualKey.content_logging_enabled),
+                func.count().filter(VirtualKey.content_logging_enabled & VirtualKey.image_logging_enabled),
+            ).where(VirtualKey.workspace_id == ws.id, VirtualKey.revoked_at.is_(None))
+        ).one()
+        body["content_logging"].update(keys_total=counts[0], keys_logging=counts[1], keys_logging_images=counts[2])
         body["image_logging"].update(
             used_bytes=used,
             cap_bytes=settings.CONTENT_IMAGE_MAX_BYTES_PER_WORKSPACE,

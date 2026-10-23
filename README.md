@@ -382,9 +382,9 @@ script-readable (the SPA echoes it) but is otherwise `Lax`/`Secure` like the ses
 | DELETE | `/api/workspace/pricing/{id}` | admin | remove an override — `404` if it isn't this workspace's |
 | GET | `/api/providers` | admin | `[{provider, env_var, configured_via_env}]` — instance-wide env-var status only |
 | GET | `/api/integration?target=hosted\|local` | member | copy-ready, per-provider setup (URLs, env vars, code) for OpenAI / Anthropic / Gemini — placeholder `vk_...` only, never a key |
-| POST | `/api/keys` | admin | `{label, allowed_providers[], allow_live?, default_provider?, assigned_user_id?, monthly_budget_usd?, budget_period?(day\|week\|month\|custom), budget_start?, budget_end?, expires_at?, allowed_models?{provider:[model]}}` → raw key once |
+| POST | `/api/keys` | admin | `{label, allowed_providers[], allow_live?, default_provider?, assigned_user_id?, monthly_budget_usd?, budget_period?(day\|week\|month\|custom), budget_start?, budget_end?, expires_at?, allowed_models?{provider:[model]}, content_logging_enabled?, image_logging_enabled?}` (both logging switches default `false`) → raw key once |
 | GET | `/api/keys` | member | admin → every key in the workspace (+ `assigned_username`); member → only keys assigned to them |
-| PATCH `\|` DELETE | `/api/keys/{id}` | admin | patch (budget, `allow_live`, `assigned_user_id`/`clear_assignment`) / revoke |
+| PATCH `\|` DELETE | `/api/keys/{id}` | admin | patch (budget, `allow_live`, `assigned_user_id`/`clear_assignment`, `content_logging_enabled`, `image_logging_enabled`) / revoke |
 | GET | `/api/requests` | admin | recent request log (`?limit&cursor&provider&model&key_id&status&start&end`); rows carry `has_content` |
 | GET | `/api/requests/{id}/content` | admin | the stored prompt/response of one request (`content_status`: `available` / `expired` / `not_captured` / `unreadable`); `Cache-Control: no-store`; another workspace's id is a 404 |
 | PATCH | `/api/workspace/content-logging` | admin | `{enabled}` — turn prompt/response logging on/off for the workspace (default off) |
@@ -544,7 +544,8 @@ as the next request; the gateway just re-authorizes, re-budgets, and forwards ea
 - **virtual_keys** — `id, workspace_id → workspaces (`ON DELETE CASCADE`), assigned_user_id →
   users (nullable), label, key_hash, key_prefix, allow_live, default_provider,
   monthly_budget_usd, budget_period, budget_start, budget_end, expires_at (nullable),
-  created_at, last_used_at, revoked_at`. `assigned_user_id` NULL = workspace-level (admin-only
+  created_at, last_used_at, revoked_at, content_logging_enabled, image_logging_enabled`
+  (both `NOT NULL DEFAULT false`: per-key logging switches, see "Per-key logging"). `assigned_user_id` NULL = workspace-level (admin-only
   visibility); set = that Team Member sees it. Only the HMAC hash + an 11-char prefix are stored;
   the raw key is shown once. Per-key **budget**: `$X` per `1 day` / `1 week` / `1 month`
   (rolling), or a `custom` fixed `[budget_start, budget_end]` range → `402` when spent.
@@ -604,7 +605,8 @@ as the next request; the gateway just re-authorizes, re-budgets, and forwards ea
 ### Prompt & response logging
 
 Off by default; a workspace admin turns it on in **Workspace → Prompt & response logging** (everyone in
-the workspace can see that it is on). While on, each request's prompt and response are stored **after**
+the workspace can see that it is on). This is the workspace **master** switch: each virtual key must also have
+its own logging switch on (see "Per-key logging"). While on, each request's prompt and response are stored **after**
 the usage row is committed, in `usage_content`, encrypted with `ENCRYPTION_KEY` (required in deployed
 environments). Capture can never fail or slow a request, and usage analytics (counts, tokens, cost,
 latency, status) are unchanged whether it is on or off.
@@ -624,6 +626,30 @@ latency, status) are unchanged whether it is on or off.
 - **Streaming** responses are observed after each chunk has been forwarded — capture never buffers or
   delays a stream. A stream the client abandons records nothing (as before).
 - Rotating `ENCRYPTION_KEY` makes already-stored content unreadable (it is reported as such).
+
+### Per-key logging
+
+Prompt/response logging and image logging are chosen **per virtual key**, under the workspace switches as
+**master controls**. A key is captured only when **both** are on:
+
+| | workspace switch | key switch |
+|---|---|---|
+| prompts & responses | Workspace -> Prompt & response logging | key's "Log prompts & responses" |
+| images | Workspace -> "Store images" | key's "Also store images" (needs the text switch on the same key) |
+
+- **Defaults:** both key switches are **off** for every new key, and the workspace switches are off too. Turning
+  a workspace switch on does not log any key until that key's own switch is on; turning a workspace switch off
+  stops every key at once but keeps each key's setting, so turning it back on restores the admin's choices.
+- **Who can change them:** workspace admins only (when creating a key, or later via **Virtual keys -> Logging** or
+  `PATCH /api/keys/{id}`). The key's assigned Team Member can see whether their key is logged (`GET /api/keys`).
+  Nothing here shows a full key secret: keys are identified by label and `vk_...` prefix only.
+- **Unchanged:** the 30-day retention, encryption, storage caps, sweeps and admin-only reading. Switching a key
+  off stops *new* capture; content already stored stays until it expires or is deleted from the workspace.
+- **Migration (v13):** adds the two columns. The first time they are created, existing keys **inherit their
+  workspace's current state once** (a workspace that already logs keeps logging the same keys; a workspace with
+  logging off keeps every key off), so no key that is not logging today starts logging. The copy never runs
+  again, so re-running the migration cannot re-enable a key an admin turned off. Rolling back to a version
+  without per-key switches returns to workspace-wide capture for any workspace whose master switch is on.
 
 ### Image logging
 

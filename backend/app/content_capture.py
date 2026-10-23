@@ -498,8 +498,12 @@ class ContentCapture:
 
 
 def begin(db: Session, vk: VirtualKey, kind: str, body: dict, *, model: str | None = None) -> ContentCapture | None:
-    """None unless this key's workspace opted in (one primary-key lookup per request). Never raises."""
+    """None unless BOTH this key and its workspace opted in. A key with logging off (the default) returns at once
+    without touching the database; otherwise one primary-key lookup reads the workspace master switches.
+    Images need the key's image switch AND the workspace's. Never raises."""
     try:
+        if not vk.content_logging_enabled:
+            return None  # per-key switch off (default): not captured, whatever the workspace says
         flags = db.execute(
             select(Workspace.content_logging_enabled, Workspace.image_logging_enabled).where(
                 Workspace.id == vk.workspace_id
@@ -509,7 +513,7 @@ def begin(db: Session, vk: VirtualKey, kind: str, body: dict, *, model: str | No
             return None  # text logging off: nothing is captured, images included
         request, truncated, size = build_request(kind, body, model)
         capture = ContentCapture(vk.workspace_id, kind, request, truncated, size)
-        if flags[1]:  # the separate image opt-in
+        if flags[1] and vk.image_logging_enabled:  # the separate image opt-in, at workspace AND key level
             capture.want_images = True
             try:
                 capture.images = content_images.request_candidates(kind, body)
