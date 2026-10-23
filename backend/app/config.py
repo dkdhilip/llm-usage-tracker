@@ -109,6 +109,17 @@ class Settings(BaseSettings):
     # Capture is skipped (never deleting unexpired content) once a workspace holds this many live rows.
     CONTENT_MAX_ROWS_PER_WORKSPACE: int = Field(default=2_000, ge=1)
 
+    # ---- image logging (app/content_images.py) ----
+    # A SECOND opt-in (workspaces.image_logging_enabled, default off; text logging never enables it). Images are
+    # stored Fernet-encrypted as BYTEA in the same Postgres, expire with their text record, and are only ever
+    # taken from bytes already embedded in the request/response (never fetched from a URL). Caps are on bytes as
+    # STORED (encrypted, ~1.37x the image); capture is skipped, never failed, when a cap is reached.
+    CONTENT_IMAGE_MAX_BYTES: int = Field(default=2_000_000, ge=10_000, le=10_000_000)  # one image, decoded
+    CONTENT_IMAGE_MAX_PER_REQUEST: int = Field(default=4, ge=1, le=16)
+    CONTENT_IMAGE_MAX_REQUEST_BYTES: int = Field(default=6_000_000, ge=10_000, le=40_000_000)
+    CONTENT_IMAGE_MAX_BYTES_PER_WORKSPACE: int = Field(default=50_000_000, ge=1_000_000)
+    CONTENT_IMAGE_MAX_BYTES_TOTAL: int = Field(default=150_000_000, ge=1_000_000)  # all workspaces: protects the DB
+
     VERSION: str = "0.19.0"
 
     # ---- deployment identity (drift monitoring) ----

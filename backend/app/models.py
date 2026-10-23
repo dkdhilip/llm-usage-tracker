@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -41,6 +42,13 @@ class Workspace(Base):
     # Informational user id, deliberately NOT a foreign key: workspaces <-> users would be a circular FK
     # (users.workspace_id already points the other way), and a dangling id after a user is deleted is harmless.
     content_logging_updated_by: Mapped[int | None] = mapped_column(BigInteger)
+    # Separate opt-in for storing the actual images (app/content_images.py). OFF by default and never turned on
+    # by content_logging_enabled. Same no-FK reasoning for the user id.
+    image_logging_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    image_logging_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    image_logging_updated_by: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class User(Base):
@@ -327,6 +335,41 @@ class UsageContent(Base):
     # Sizes of the redacted plaintext before encryption (no content).
     request_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     response_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UsageContentImage(Base):
+    """One stored image (an input the user sent, or one the model generated) of a usage_content record.
+
+    Bytes are verified by magic number (PNG/JPEG/WebP/GIF only) and Fernet-encrypted; `mime` is the SNIFFED type,
+    never the declared one. `stored_bytes` is the size as stored (what the caps count). Expiry is copied from the
+    parent and enforced on every read; the FKs cascade, so deleting the text record, usage row, key or workspace
+    removes the images too. Never returned by list endpoints — only by the image endpoint."""
+
+    __tablename__ = "usage_content_images"
+    __table_args__ = (
+        Index("ix_usage_content_images_content_id", "content_id"),
+        Index("ix_usage_content_images_workspace_id", "workspace_id"),
+        Index("ix_usage_content_images_expires_at", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    content_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usage_content.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String, nullable=False)  # input | output
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    mime: Mapped[str] = mapped_column(String, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)  # decoded image bytes
+    stored_bytes: Mapped[int] = mapped_column(Integer, nullable=False)  # encrypted bytes as stored
+    sha256: Mapped[str] = mapped_column(String, nullable=False)
+    data_encrypted: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

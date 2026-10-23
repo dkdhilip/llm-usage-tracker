@@ -28,14 +28,14 @@ import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app import crypto
+from app import content_images, crypto
 from app.config import settings
 from app.db import SessionLocal
-from app.models import UsageContent, VirtualKey, Workspace
+from app.models import UsageContent, UsageContentImage, VirtualKey, Workspace
 
 logger = logging.getLogger("app.content_capture")
 
@@ -417,6 +417,9 @@ class ContentCapture:
     response_truncated: bool = False
     response_bytes: int = 0
     _stream: _StreamBuffer | None = field(default=None, repr=False)
+    # Image logging is a separate opt-in; these stay empty (and nothing is scanned) unless the workspace has it on.
+    want_images: bool = False
+    images: list = field(default_factory=list, repr=False)  # content_images.Candidate, bytes NOT decoded yet
 
     def _set_response(self, text: str, summary: str, truncated_before: bool = False) -> None:
         b = _Budget()
@@ -429,6 +432,8 @@ class ContentCapture:
         try:
             text, summary = extract_response(self.kind, resp)
             self._set_response(text, summary)
+            if self.want_images:
+                self.images.extend(content_images.response_candidates(self.kind, resp))
         except Exception as exc:  # noqa: BLE001 — capture must never break a request
             logger.warning("content capture: response extraction failed (%s)", type(exc).__name__)
 
@@ -484,10 +489,22 @@ class ContentCapture:
 def begin(db: Session, vk: VirtualKey, kind: str, body: dict, *, model: str | None = None) -> ContentCapture | None:
     """None unless this key's workspace opted in (one primary-key lookup per request). Never raises."""
     try:
-        if not db.scalar(select(Workspace.content_logging_enabled).where(Workspace.id == vk.workspace_id)):
-            return None
+        flags = db.execute(
+            select(Workspace.content_logging_enabled, Workspace.image_logging_enabled).where(
+                Workspace.id == vk.workspace_id
+            )
+        ).first()
+        if not flags or not flags[0]:
+            return None  # text logging off: nothing is captured, images included
         request, truncated, size = build_request(kind, body, model)
-        return ContentCapture(vk.workspace_id, kind, request, truncated, size)
+        capture = ContentCapture(vk.workspace_id, kind, request, truncated, size)
+        if flags[1]:  # the separate image opt-in
+            capture.want_images = True
+            try:
+                capture.images = content_images.request_candidates(kind, body)
+            except Exception as exc:  # noqa: BLE001 — images are optional; text capture carries on
+                logger.warning("content capture: image scan failed (%s)", type(exc).__name__)
+        return capture
     except Exception as exc:  # noqa: BLE001
         logger.warning("content capture: could not start (%s)", type(exc).__name__)
         return None
@@ -498,18 +515,10 @@ def begin(db: Session, vk: VirtualKey, kind: str, body: dict, *, model: str | No
 
 def store(usage_log_id: int, capture: ContentCapture) -> bool:
     """Persist `capture` for an already-committed usage row, in its own session. True if a row was written.
-    Skips (never deletes live content) once the workspace holds CONTENT_MAX_ROWS_PER_WORKSPACE live rows."""
+    Skips (never deletes live content) once the workspace holds CONTENT_MAX_ROWS_PER_WORKSPACE live rows.
+    Images (only when the workspace opted in separately) are stored after the text record, in their own commit:
+    an image problem keeps the text."""
     try:
-        payload = json.dumps(
-            {
-                "v": 1,
-                "kind": capture.kind,
-                "request": capture.request,
-                "response": {"text": capture.response_text, "summary": capture.response_summary},
-            },
-            ensure_ascii=False,
-        )
-        encrypted = crypto.encrypt(payload)
         with SessionLocal() as db:
             live = db.scalar(
                 select(func.count())
@@ -519,7 +528,36 @@ def store(usage_log_id: int, capture: ContentCapture) -> bool:
             if (live or 0) >= settings.CONTENT_MAX_ROWS_PER_WORKSPACE:
                 logger.info("content capture: skipped, workspace %s is at its row cap", capture.workspace_id)
                 return False
-            result = db.execute(
+            staged: list = []
+            skipped: list = []
+            if capture.want_images and capture.images:
+                try:
+                    staged, skipped = content_images.stage(capture.images)  # no DB, no lock
+                except Exception as exc:  # noqa: BLE001
+                    staged, skipped = [], []
+                    logger.warning("content capture: image staging failed (%s)", type(exc).__name__)
+            accepted: list = []
+            if staged:
+                # One transaction from here to the commit: the lock makes the storage caps exact under
+                # concurrency (it is released by the commit/rollback, and only image-bearing stores take it).
+                try:
+                    db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": content_images.LOCK_KEY})
+                    accepted, over = content_images.apply_caps(db, capture.workspace_id, staged)
+                    skipped = skipped + over
+                except Exception as exc:  # noqa: BLE001
+                    db.rollback()  # also releases the lock
+                    accepted = []
+                    logger.warning("content capture: image cap check failed (%s)", type(exc).__name__)
+            body = {
+                "v": 1,
+                "kind": capture.kind,
+                "request": capture.request,
+                "response": {"text": capture.response_text, "summary": capture.response_summary},
+            }
+            if skipped:
+                body["images_skipped"] = skipped  # [{role, reason}] - never the image or its URL
+            encrypted = crypto.encrypt(json.dumps(body, ensure_ascii=False))
+            row = db.execute(
                 pg_insert(UsageContent)
                 .values(
                     usage_log_id=usage_log_id,
@@ -533,11 +571,32 @@ def store(usage_log_id: int, capture: ContentCapture) -> bool:
                     expires_at=func.now() + timedelta(days=settings.CONTENT_RETENTION_DAYS),
                 )
                 .on_conflict_do_nothing(index_elements=[UsageContent.usage_log_id])
-            )
+                .returning(UsageContent.id, UsageContent.expires_at)
+            ).first()
+            if row is not None and accepted:
+                try:
+                    with db.begin_nested():  # a failed image insert rolls back to here and keeps the text
+                        for img in accepted:
+                            db.add(
+                                UsageContentImage(
+                                    content_id=row[0],
+                                    workspace_id=capture.workspace_id,
+                                    role=img.role,
+                                    position=img.position,
+                                    mime=img.mime,
+                                    byte_size=len(img.data),
+                                    stored_bytes=len(img.token),
+                                    sha256=img.sha256,
+                                    data_encrypted=img.token,
+                                    expires_at=row[1],
+                                )
+                            )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("content capture: image store failed (%s)", type(exc).__name__)
             db.commit()
             if random.random() < _SWEEP_PROBABILITY:
                 cleanup_expired(db)
-            return bool(result.rowcount)
+            return row is not None
     except Exception as exc:  # noqa: BLE001 — never let capture affect the request
         logger.warning("content capture: store failed for usage %s (%s)", usage_log_id, type(exc).__name__)
         return False

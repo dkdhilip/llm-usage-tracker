@@ -334,6 +334,11 @@ are deliberately out of scope for now.)
 | `CONTENT_MAX_BYTES` | `32768` | Max stored size per side (request / response) of one record; more is truncated and flagged. |
 | `CONTENT_MAX_FIELD_CHARS` | `8000` | Max characters kept per message / field. |
 | `CONTENT_MAX_ROWS_PER_WORKSPACE` | `2000` | Capture pauses (requests are unaffected) while a workspace holds this many unexpired records. |
+| `CONTENT_IMAGE_MAX_BYTES` | `2000000` | Image logging (separate opt-in): largest single image stored (decoded bytes). |
+| `CONTENT_IMAGE_MAX_PER_REQUEST` | `4` | Most images stored for one request. |
+| `CONTENT_IMAGE_MAX_REQUEST_BYTES` | `6000000` | Most encrypted bytes stored for one request. |
+| `CONTENT_IMAGE_MAX_BYTES_PER_WORKSPACE` | `50000000` | Stored image bytes (encrypted size) one workspace may hold; further images are skipped. |
+| `CONTENT_IMAGE_MAX_BYTES_TOTAL` | `150000000` | The same ceiling across ALL workspaces, protecting the shared database. |
 | `MODEL_PRICING_OVERRIDES_PATH` | `""` | Optional path to a JSON file of extra `{provider, model, input, output}` price entries, merged over the built-in table at startup — price a newly released model without a code deploy. A missing/malformed file is silently ignored. |
 | `IDEMPOTENCY_TTL_HOURS` | `24` | How long a stored `Idempotency-Key` result is replayable before it expires and an identical request is treated as fresh (`app/idempotency.py`). |
 | `IDEMPOTENCY_MAX_REPLAY_BYTES` | `262144` | Max response body stored (encrypted) for replay. A larger response (big base64 image, long audio) is recorded terminal-but-**not** replayable — no double-charge, but a retry gets a 409 rather than a wrong empty body. |
@@ -382,7 +387,9 @@ script-readable (the SPA echoes it) but is otherwise `Lax`/`Secure` like the ses
 | GET | `/api/requests` | admin | recent request log (`?limit&cursor&provider&model&key_id&status&start&end`); rows carry `has_content` |
 | GET | `/api/requests/{id}/content` | admin | the stored prompt/response of one request (`content_status`: `available` / `expired` / `not_captured` / `unreadable`); `Cache-Control: no-store`; another workspace's id is a 404 |
 | PATCH | `/api/workspace/content-logging` | admin | `{enabled}` — turn prompt/response logging on/off for the workspace (default off) |
-| DELETE | `/api/workspace/content` | admin | delete all stored prompt/response content of the workspace now (usage analytics untouched) |
+| DELETE | `/api/workspace/content` | admin | delete all stored prompt/response content **and images** of the workspace now (usage analytics untouched) |
+| PATCH | `/api/workspace/image-logging` | admin | `{enabled}` - turn image storage on/off (separate from text logging, default off) |
+| GET | `/api/requests/{id}/images/{image_id}` | admin | the bytes of one stored image (type sniffed at store time, `nosniff`, `no-store`, sandbox CSP); another workspace's or an expired image is a 404. Request/list responses carry image metadata only |
 | GET | `/api/usage/summary` `\|` `/timeseries` `\|` `/by-key` `\|` `/by-model` | member | dashboard aggregates (`start,end,provider,model,key_id`); admin → whole workspace, member → assigned keys. `summary` adds `latency_p50_ms`, `latency_p95_ms`, `error_rate`, `tokens_per_sec` |
 | **POST** | **`/v1/chat/completions`** | Bearer `vk_…` | **OpenAI-compatible.** `{model:"<provider>/<slug>", messages[], stream?}`. For `openai`/`openrouter`: full-fidelity passthrough (tools, tool_choice, response_format, multimodal content — the real provider response, untouched). For `anthropic`/`gemini`: legacy translation (flattened prompt, gateway-built envelope). `402` over budget/cap or no provider key, `403` paused / provider or model not on key, `502` upstream failure. |
 | **POST** | **`/v1/messages`** | Bearer `vk_…` | **Anthropic Messages passthrough** (`anthropic` only). `{model, max_tokens, messages[], system?, tools?, stream?, ...}` forwarded almost verbatim → the real Anthropic response. `max_tokens` is required by Anthropic itself — the gateway no longer defaults it. |
@@ -584,6 +591,10 @@ as the next request; the gateway just re-authorizes, re-budgets, and forwards ea
   see "Idempotency" under Reliability. Scoped to the virtual key, so a key from another key/workspace
   can never retrieve this row; the stored response body is encrypted at rest.
 
+- **usage_content_images** - `(id, content_id -> usage_content (`ON DELETE CASCADE`), workspace_id ->
+  workspaces (`ON DELETE CASCADE`), role (`input` | `output`), position, mime (sniffed), byte_size,
+  stored_bytes, sha256, data_encrypted (Fernet, BYTEA), created_at, expires_at)`. Opt-in per workspace
+  (`workspaces.image_logging_enabled`, default false). See "Image logging" below.
 - **usage_content** — `(id, usage_log_id → usage_logs (`ON DELETE CASCADE`, unique), workspace_id →
   workspaces (`ON DELETE CASCADE`), kind, content_encrypted (Fernet), request_truncated,
   response_truncated, request_bytes, response_bytes, created_at, expires_at)`. Opt-in per workspace
@@ -612,6 +623,34 @@ latency, status) are unchanged whether it is on or off.
 - **Streaming** responses are observed after each chunk has been forwarded — capture never buffers or
   delays a stream. A stream the client abandons records nothing (as before).
 - Rotating `ENCRYPTION_KEY` makes already-stored content unreadable (it is reported as such).
+
+### Image logging
+
+A **second, separate opt-in** on top of prompt/response logging (Workspace -> Prompt & response logging ->
+"Store images"). It is off by default and turning text logging on never turns it on; it also only takes
+effect while text logging is on. When enabled, admins can see the pictures sent to vision models and the
+images a model generated, in the request detail panel.
+
+- **Source:** only bytes already inside the request/response JSON - `data:` URLs and base64 fields - for
+  chat/OpenRouter (`image_url`), Responses (`input_image`, `image_generation_call`), Anthropic Messages
+  (base64 `source`), Gemini (`inlineData`) and `/v1/images/generations` (`b64_json`). **Links are never
+  downloaded** (no server-side fetching, so no SSRF) and never stored: a signed or expiring URL is recorded
+  only as "not stored". Use `response_format=b64_json` if you want generated images kept. Images in streamed
+  *responses* and multipart edits are not stored.
+- **Verified, not trusted:** only PNG, JPEG, GIF and WebP, checked by magic number; the declared MIME type is
+  ignored. SVG/PDF/audio/other files are skipped. No resizing or transcoding.
+- **Encrypted** with `ENCRYPTION_KEY` (Fernet, about 1.37x the image size) in `usage_content_images.data_encrypted`
+  (BYTEA); a rotated key makes them unreadable. They expire with their text record (30 days max), are deleted
+  by the same sweeps, by "Delete stored content", and by key/workspace deletion.
+- **Bounded:** per image, per request, per workspace and global caps (`CONTENT_IMAGE_*`), counted on stored
+  bytes. A reached cap skips the image and records the reason; requests, text capture and analytics are never
+  affected. The Workspace page shows used vs cap.
+- **Access:** workspace admins only, one image at a time through the image endpoint; list endpoints never
+  contain image bytes or base64. Members can see that image logging is on, not the images.
+- **Storage is finite.** Images live in the same database as everything else (on Neon's free tier the whole
+  database is small, check your plan in the Neon console). The default caps (50 MB per workspace, 150 MB
+  overall) are deliberately modest; raise them only if your plan has room. Deleted rows free space only
+  after Postgres vacuums them.
 
 ### Model pricing registry
 
