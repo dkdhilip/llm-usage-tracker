@@ -26,6 +26,9 @@ function ProviderRow({
   onChange: () => void;
 }) {
   const [editing, setEditing] = useState(p.source === "none");
+  // With no key saved the entry field is ALWAYS shown. (It used to depend on `editing`, which was only true if the
+  // row had started without a key, so after clearing a saved key the field stayed hidden until a page refresh.)
+  const showInput = editing || p.source === "none";
   const [val, setVal] = useState("");
   const [cap, setCap] = useState("");
   const [busy, setBusy] = useState<null | "key" | "cap">(null);
@@ -57,7 +60,7 @@ function ProviderRow({
           </span>
         ) : (
           <div className="ml-auto flex items-center gap-1.5">
-            {p.source === "workspace" && !editing && (
+            {p.source === "workspace" && !showInput && (
               <>
                 <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
                   saved ····{p.last4}
@@ -77,7 +80,7 @@ function ProviderRow({
                 </button>
               </>
             )}
-            {editing && (
+            {showInput && (
               <>
                 <input
                   type="password"
