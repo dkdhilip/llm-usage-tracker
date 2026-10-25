@@ -20,7 +20,7 @@ _EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 def _chat_headers(provider: str, api_key: str) -> dict:
     headers = {"Authorization": f"Bearer {api_key}", "content-type": "application/json"}
     if provider == "openrouter":
-        headers["HTTP-Referer"] = "https://github.com/dkdhilip8/llm-usage-tracker"
+        headers["HTTP-Referer"] = "https://github.com/dkdhilip/llm-usage-tracker"
         headers["X-Title"] = "LLM Usage Tracker"
     return headers
 
