@@ -69,6 +69,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  localStorage.clear(); // the 'show revoked keys' choice is remembered per browser
   vi.mocked(api.getWorkspace).mockResolvedValue({
     id: 1, name: "Acme", role: "admin",
     members: [{ user_id: 1, username: "admin", role: "admin", assigned_keys: 0, requests: 0, cost: 0 }],
@@ -94,6 +95,7 @@ describe("Workspace → Connect your app", () => {
     const user = userEvent.setup();
     renderPage();
     const row = (await screen.findByText("team-key")).closest("tr")!;
+    await user.click(await screen.findByRole("button", { name: /Show revoked keys/ })); // revoked keys are hidden by default
     expect(within((await screen.findByText("old-key")).closest("tr")!).queryByRole("button", { name: "Connect" })).toBeNull(); // revoked
 
     expect(screen.queryByRole("region", { name: "Connect your app" })).toBeNull();

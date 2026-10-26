@@ -62,10 +62,12 @@ def _build_allowed_models(
     return rows
 
 
-def _in_workspace(db: Session, key_id: int, m: Membership) -> VirtualKey:
+def _in_workspace(db: Session, key_id: int, m: Membership, *, allow_deleted: bool = False) -> VirtualKey:
     vk = db.get(VirtualKey, key_id)
     if vk is None or vk.workspace_id != m.workspace_id:
         raise HTTPException(404, "key not found")  # don't reveal other workspaces' key ids
+    if vk.deleted_at is not None and not allow_deleted:
+        raise HTTPException(404, "key not found")  # a deleted key can no longer be changed
     return vk
 
 
@@ -105,7 +107,7 @@ def create_key(
     owned = db.scalar(
         select(func.count())
         .select_from(VirtualKey)
-        .where(VirtualKey.workspace_id == m.workspace_id)
+        .where(VirtualKey.workspace_id == m.workspace_id, VirtualKey.deleted_at.is_(None))  # deleted keys free a slot
     )
     if (owned or 0) >= settings.MAX_KEYS_PER_WORKSPACE:
         raise HTTPException(
@@ -170,7 +172,7 @@ def list_keys(
     }
     stmt = select(VirtualKey).where(VirtualKey.workspace_id == m.workspace_id)
     if not m.is_admin:
-        stmt = stmt.where(VirtualKey.assigned_user_id == m.user_id)
+        stmt = stmt.where(VirtualKey.assigned_user_id == m.user_id, VirtualKey.deleted_at.is_(None))
     keys = db.scalars(stmt.order_by(VirtualKey.created_at.desc())).all()
     names = (
         {u.id: u.username for u in db.scalars(select(User).where(User.workspace_id == m.workspace_id))}
@@ -198,6 +200,7 @@ def list_keys(
                 created_at=k.created_at,
                 last_used_at=k.last_used_at,
                 revoked_at=k.revoked_at,
+                deleted_at=k.deleted_at,
                 requests=requests,
                 total_tokens=total_tokens,
                 cost=cost,
@@ -285,6 +288,25 @@ def revoke_key(
         vk.revoked_at = datetime.now(UTC)
         db.commit()
     return {"id": vk.id, "revoked_at": vk.revoked_at}
+
+
+@router.post("/{key_id}/delete")
+def delete_key(
+    key_id: int,
+    db: Session = Depends(get_db),
+    m: Membership = Depends(require_workspace_admin),
+) -> dict:
+    """Delete a REVOKED key (soft delete, admin only): it moves to the "Deleted keys" view and stops counting toward
+    the workspace's key limit, while its usage history, cost totals and stored content are kept. An active key must
+    be revoked first. Repeating it on an already-deleted key is a no-op."""
+    vk = _in_workspace(db, key_id, m, allow_deleted=True)
+    if vk.revoked_at is None:
+        raise HTTPException(409, "Revoke the key before deleting it.")
+    if vk.deleted_at is None:
+        vk.deleted_at = datetime.now(UTC)
+        db.commit()
+        logger.info("key deleted: user=%s key=%s", m.user_id, vk.id)  # who and which, never the secret
+    return {"id": vk.id, "revoked_at": vk.revoked_at, "deleted_at": vk.deleted_at}
 
 
 def _created(vk: VirtualKey, raw: str) -> KeyCreated:

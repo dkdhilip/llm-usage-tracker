@@ -67,6 +67,7 @@ const KEYS = [
 ];
 
 beforeEach(() => {
+  localStorage.clear(); // the 'show revoked keys' choice is remembered per browser
   vi.mocked(api.getWorkspace).mockResolvedValue(workspace({ text: true, images: true }));
   vi.mocked(api.listKeys).mockResolvedValue(KEYS);
   vi.mocked(api.listModelPricing).mockResolvedValue([]);
@@ -168,6 +169,7 @@ describe("Workspace -> per-key logging", () => {
   it("does not offer logging controls for a revoked key", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([key({ id: 9, label: "gone", revoked_at: "2026-09-01T00:00:00Z", content_logging_enabled: true })]);
     page();
+    await userEvent.setup().click(await screen.findByRole("button", { name: /Show revoked keys/ })); // hidden by default
     const row = await rowOf("gone");
     expect(within(row).queryByRole("button", { name: "Logging" })).toBeNull();
   });

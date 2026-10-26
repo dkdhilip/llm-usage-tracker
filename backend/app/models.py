@@ -131,6 +131,10 @@ class VirtualKey(Base):
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Soft delete: only a REVOKED key can be deleted. The row stays (so its usage history, cost totals and stored
+    # content are untouched) but it leaves the keys list for a separate "Deleted keys" view, no longer counts toward
+    # MAX_KEYS_PER_WORKSPACE, and cannot be edited. Authentication is unaffected: a deleted key is always revoked.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Null = never expires. Past this instant, require_virtual_key rejects the
     # key with the same generic 401 as a revoked/unknown key (no state leak).
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
