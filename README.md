@@ -40,19 +40,76 @@ Browser → React (Dashboard — all; Requests · Playground · Workspace — ad
 
 ## Use it from your code
 
-Point any OpenAI SDK at the gateway:
+To use the gateway, change **two things** in your app: point the **base URL** at this deployment, and use a
+**virtual key** (`vk_...`) instead of your real provider key. Create the key in **Workspace → Create a virtual
+key**. The real provider keys stay inside the gateway workspace and never go into your app.
 
-```python
-from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="vk_...")
-client.chat.completions.create(
-    model="openrouter/meta-llama/llama-3.3-70b-instruct",   # <provider>/<slug>
-    messages=[{"role": "user", "content": "hi"}],
-    stream=True,   # SSE streaming supported
-)
+### 1. Change the base URL and key in your `.env`
+
+```env
+# OpenAI and OpenRouter (both use the openai SDK): the base URL ends in /v1
+OPENAI_API_KEY=vk_your_virtual_key
+OPENAI_BASE_URL=https://llm-usage-tracker-97q0.onrender.com/v1
+
+# Anthropic (anthropic SDK): NO /v1, the SDK adds /v1/messages itself
+ANTHROPIC_API_KEY=vk_your_virtual_key
+ANTHROPIC_BASE_URL=https://llm-usage-tracker-97q0.onrender.com
+
+# Google Gemini (google-genai SDK): NO /v1, the SDK adds /v1beta/... itself
+GEMINI_API_KEY=vk_your_virtual_key
+GOOGLE_GEMINI_BASE_URL=https://llm-usage-tracker-97q0.onrender.com
 ```
 
-More setup, other SDKs and every endpoint: [docs/api.md](docs/api.md).
+If you run your own copy, replace `https://llm-usage-tracker-97q0.onrender.com` with your own Render URL (locally:
+`http://localhost:8000`). Keep the `/v1` only where shown. Adding `/v1` to the Anthropic or Gemini address makes
+the request go to `/v1/v1/...`, which does not exist.
+
+| Provider | SDK | Base URL | Model name (example only) |
+|---|---|---|---|
+| OpenAI | `openai` | `https://llm-usage-tracker-97q0.onrender.com/v1` | `openai/gpt-4o-mini` |
+| OpenRouter | `openai` (same client) | `https://llm-usage-tracker-97q0.onrender.com/v1` | `openrouter/<vendor>/<model>` |
+| Anthropic | `anthropic` | `https://llm-usage-tracker-97q0.onrender.com` (no `/v1`) | `claude-sonnet-5-5` |
+| Google Gemini | `google-genai` | `https://llm-usage-tracker-97q0.onrender.com` (no `/v1`) | `gemini-3.8-flash` |
+
+The model names are **only examples**: use any model your virtual key allows (`GET /api/models` lists the models
+the gateway knows prices for).
+
+### 2. Use the SDK as usual
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()   # the SDKs do not read .env on their own
+
+# OpenAI: the client reads OPENAI_API_KEY and OPENAI_BASE_URL
+from openai import OpenAI
+client = OpenAI()
+client.chat.completions.create(model="openai/gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
+
+# OpenRouter: the same client, with an "openrouter/" model name
+client.chat.completions.create(model="openrouter/anthropic/claude-sonnet-5.5", messages=[{"role": "user", "content": "hi"}])
+
+# Anthropic
+from anthropic import Anthropic
+client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], base_url=os.environ["ANTHROPIC_BASE_URL"])
+client.messages.create(model="claude-sonnet-5-5", max_tokens=256, messages=[{"role": "user", "content": "hi"}])
+
+# Google Gemini
+from google import genai
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"base_url": os.environ["GOOGLE_GEMINI_BASE_URL"]})
+client.models.generate_content(model="gemini-3.8-flash", contents="hi")
+```
+
+Things to know:
+
+- **The base URL is required.** A virtual key alone redirects nothing. Without the base URL the SDK sends your
+  virtual key to the provider's own host.
+- **The workspace needs a provider key** for each provider you call (Workspace → Provider keys), and the virtual
+  key must allow that provider. Otherwise the gateway answers `402` or `403`.
+- **Everything shows up on the dashboard:** requests, tokens, cost and latency per key, provider and model.
+
+More on setup, embeddings, images, audio, LangChain and every endpoint: [docs/api.md](docs/api.md).
 
 ## Run locally
 
