@@ -3,10 +3,14 @@ key(s), each with a monthly cap; the workspace's virtual keys then make live cal
 on those keys, capped per provider."""
 
 import datetime as _dt
+import itertools
+
+_key_n = itertools.count(1)
 
 
 def _mk_key(c, **over):
-    body = {"label": "k", "allowed_providers": ["openrouter"], **over}
+    # key names must be unique per workspace, so the default name is numbered
+    body = {"label": f"k{next(_key_n)}", "allowed_providers": ["openrouter"], **over}
     r = c.post("/api/keys", json=body)
     assert r.status_code == 200, r.text
     return r.json()

@@ -87,6 +87,21 @@ def create_key(
     label = body.label.strip()
     if not label:
         raise HTTPException(422, "label is required")
+    # Names identify who spent what, so two ACTIVE keys in a workspace may not share one (case and surrounding
+    # spaces ignored). A revoked key's name can be reused. Application-level on purpose: existing duplicates stay.
+    taken = db.scalar(
+        select(VirtualKey.id)
+        .where(
+            VirtualKey.workspace_id == m.workspace_id,
+            VirtualKey.revoked_at.is_(None),
+            func.lower(func.trim(VirtualKey.label)) == label.lower(),
+        )
+        .limit(1)
+    )
+    if taken is not None:
+        raise HTTPException(
+            409, f"A key named '{label}' already exists in this workspace. Pick a different name."
+        )
     owned = db.scalar(
         select(func.count())
         .select_from(VirtualKey)
