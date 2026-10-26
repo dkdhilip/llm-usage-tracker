@@ -191,6 +191,12 @@ def _migrate(db: Session) -> None:
     db.commit()
 
 
+    # v14: soft-deleted keys. Additive only (one nullable column); every existing key stays exactly as it is.
+    if not _has_col(db, "virtual_keys", "deleted_at"):
+        db.execute(text("ALTER TABLE virtual_keys ADD COLUMN deleted_at TIMESTAMPTZ"))
+        db.commit()
+
+
 def _migrate_v6_workspaces(db: Session) -> None:
     """Runs once, guarded by the presence of the old `users.is_admin` column.
     `workspaces` / `workspace_invites` already exist (create_all made them)."""

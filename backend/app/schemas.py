@@ -83,6 +83,7 @@ class KeyOut(BaseModel):
     created_at: datetime
     last_used_at: datetime | None
     revoked_at: datetime | None
+    deleted_at: datetime | None = None  # set for a soft-deleted (revoked) key; shown in a separate view
     requests: int
     total_tokens: int
     cost: float

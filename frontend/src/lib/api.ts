@@ -254,6 +254,7 @@ export interface KeyRow {
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+  deleted_at?: string | null; // set once a revoked key is deleted; it then lives in the "Deleted keys" view
   requests: number;
   total_tokens: number;
   cost: number;
@@ -552,6 +553,11 @@ export const api = {
   revokeKey: (id: number) =>
     req<{ id: number; revoked_at: string }>(`/api/keys/${id}`, {
       method: "DELETE",
+    }),
+  /** Soft-delete a revoked key (usage history is kept). */
+  deleteKey: (id: number) =>
+    req<{ id: number; revoked_at: string; deleted_at: string }>(`/api/keys/${id}/delete`, {
+      method: "POST",
     }),
 
   inspectKey: (key: string) =>
