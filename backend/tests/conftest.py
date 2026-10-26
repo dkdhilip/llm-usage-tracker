@@ -443,8 +443,11 @@ def new_member():
 
 @pytest.fixture()
 def make_key(admin_client):
+    n = {"i": 0}
+
     def _make(**over) -> dict:
-        body = {"label": "t", "allowed_providers": ["openrouter"], **over}
+        n["i"] += 1  # key names must be unique per workspace, so the default name is numbered
+        body = {"label": f"t{n['i']}", "allowed_providers": ["openrouter"], **over}
         r = admin_client.post("/api/keys", json=body)
         assert r.status_code == 200, r.text
         return r.json()
@@ -462,9 +465,12 @@ def make_live_key(admin_client):
         )
         assert r.status_code == 200, r.text
 
+    n = {"i": 0}
+
     def _make(**over) -> dict:
+        n["i"] += 1  # key names must be unique per workspace, so the default name is numbered
         body = {
-            "label": "t",
+            "label": f"t{n['i']}",
             "allowed_providers": ["openrouter"],
             "allow_live": True,
             **over,

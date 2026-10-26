@@ -435,6 +435,9 @@ function CreateKeyForm({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
+        <p className="-mt-1 text-[11px] text-fg-subtle" data-testid="label-hint">
+          Each active key needs its own name in this workspace, so you can tell who used what.
+        </p>
 
         <div>
           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">

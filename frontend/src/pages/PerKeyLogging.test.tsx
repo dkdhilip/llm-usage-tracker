@@ -224,6 +224,17 @@ describe("Workspace -> creating a key with logging", () => {
     );
   });
 
+  it("tells the admin names must be unique and shows the server's message for a duplicate", async () => {
+    vi.mocked(api.createKey).mockRejectedValue(
+      new Error("A key named 'new-key' already exists in this workspace. Pick a different name."),
+    );
+    const user = userEvent.setup();
+    await fillAndOpen(user);
+    expect(screen.getByTestId("label-hint").textContent).toMatch(/needs its own name/);
+    await user.click(screen.getByRole("button", { name: "Create key" }));
+    expect(await screen.findByText(/already exists in this workspace/)).toBeTruthy();
+  });
+
   it("unticking text logging also unticks images, and warns when the workspace master is off", async () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace({ text: false, images: false }));
     const user = userEvent.setup();
