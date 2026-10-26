@@ -11,7 +11,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
-import { IntegrationGuide } from "../components/IntegrationGuide";
+import { ConnectPanel } from "../components/ConnectPanel";
 import { num, relTime, usd } from "../lib/format";
 
 // ---------- provider keys + caps ----------
@@ -618,7 +618,7 @@ function CreateKeyForm({
 
         {created && (
           // Only what the readiness checklist needs — the plaintext key never enters the guide.
-          <IntegrationGuide
+          <ConnectPanel
             key={created.id} // a new key starts the guide afresh (provider tab, hosted/local choice)
             keyInfo={{ allowed_providers: created.allowed_providers, allow_live: created.allow_live, expires_at: created.expires_at }}
             configuredProviders={configuredProviders}
@@ -1293,7 +1293,7 @@ export function Workspace() {
                 {connectKeyId === k.id && !k.revoked_at && (
                   <tr className="border-b border-line bg-surface-2">
                     <td colSpan={11} className="px-4 py-4">
-                      <IntegrationGuide
+                      <ConnectPanel
                         keyInfo={{ allowed_providers: k.allowed_providers, allow_live: k.allow_live, expires_at: k.expires_at }}
                         configuredProviders={configured}
                       />

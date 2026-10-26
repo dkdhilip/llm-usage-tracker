@@ -52,6 +52,14 @@ function guide(): IntegrationGuideData {
   };
 }
 
+// The Connect panel is now a short per-provider summary; the long walkthrough (tabs, readiness checklist, notes) is
+// behind "Show full setup guide".
+async function openFull(user: ReturnType<typeof userEvent.setup>) {
+  const summary = await screen.findByRole("region", { name: "Connect your app" });
+  await user.click(within(summary).getByRole("button", { name: "Show full setup guide" }));
+  return screen.findByRole("region", { name: "Connect your app" });
+}
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -101,7 +109,7 @@ describe("Workspace → Connect your app", () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(within((await screen.findByText("team-key")).closest("tr")!).getByRole("button", { name: "Connect" }));
-    const region = await screen.findByRole("region", { name: "Connect your app" });
+    const region = await openFull(user);
 
     await screen.findByText("# openai code");
     const ok = (re: RegExp) => within(region).getByText(re).closest("li")!.getAttribute("data-ok");
@@ -128,12 +136,17 @@ describe("Workspace → Connect your app", () => {
     expect(screen.getByText(SECRET)).toBeInTheDocument(); // displayed exactly once, for copying
 
     const region = await screen.findByRole("region", { name: "Connect your app" });
-    await within(region).findByText("# openai code");
+    await within(region).findByTestId("connect-openai"); // the short version: only this key's provider
+    expect(within(region).queryByTestId("connect-anthropic")).toBeNull();
+    expect(within(region).queryByTestId("connect-gemini")).toBeNull();
     expect(region.textContent).not.toContain(SECRET); // never threaded into the snippets
     expect(region.textContent).toContain("vk_...");
     expect(document.body.textContent!.split(SECRET).length - 1).toBe(1); // one occurrence on the whole page
-    expect(within(region).getByRole("tab", { name: "OpenAI" })).toHaveAttribute("aria-selected", "true");
     await waitFor(() => expect(api.integrationGuide).toHaveBeenCalledWith("hosted"));
+    const full = await openFull(user); // and the long guide still opens on the key's first enabled provider
+    await within(full).findByText("# openai code");
+    expect(within(full).getByRole("tab", { name: "OpenAI" })).toHaveAttribute("aria-selected", "true");
+    expect(full.textContent).not.toContain(SECRET);
   });
 
   it("starts the guide afresh for each newly created key (its first enabled provider, not the previous key's tab)", async () => {
@@ -142,6 +155,8 @@ describe("Workspace → Connect your app", () => {
     await user.type(await screen.findByPlaceholderText(/Label — e\.g\./), "first");
     await user.click(screen.getByRole("button", { name: "Create key" }));
     let region = await screen.findByRole("region", { name: "Connect your app" });
+    await within(region).findByTestId("connect-openai");
+    region = await openFull(user);
     await within(region).findByText("# openai code");
     expect(within(region).getByRole("tab", { name: "OpenAI" })).toHaveAttribute("aria-selected", "true");
     await user.click(within(region).getByRole("tab", { name: "Gemini" })); // the developer wandered to another tab
@@ -156,6 +171,9 @@ describe("Workspace → Connect your app", () => {
 
     await screen.findByText("vk_SECOND_SECRET_456");
     region = await screen.findByRole("region", { name: "Connect your app" });
+    await within(region).findByTestId("connect-anthropic"); // the new key's panel starts afresh, short again
+    expect(within(region).queryByTestId("connect-openai")).toBeNull();
+    region = await openFull(user);
     await within(region).findByText("# anthropic code");
     expect(within(region).getByRole("tab", { name: "Anthropic" })).toHaveAttribute("aria-selected", "true");
     expect(within(region).getByRole("tab", { name: "Gemini" })).toHaveAttribute("aria-selected", "false");
@@ -170,13 +188,13 @@ describe("Workspace → Connect your app", () => {
     renderPage();
 
     await user.click(within((await screen.findByText("lapsed-key")).closest("tr")!).getByRole("button", { name: "Connect" }));
-    let region = await screen.findByRole("region", { name: "Connect your app" });
+    let region = await openFull(user);
     await within(region).findByText("# openai code");
     expect(within(region).getByText(/This key expired on/).closest("li")!.getAttribute("data-ok")).toBe("false");
     expect(within(region).getByText(/expired key is refused with a 401/)).toBeInTheDocument();
 
     await user.click(within((await screen.findByText("dated-key")).closest("tr")!).getByRole("button", { name: "Connect" }));
-    region = await screen.findByRole("region", { name: "Connect your app" });
+    region = await openFull(user);
     await within(region).findByText("# openai code");
     expect(within(region).getByText(/The key has not expired/).closest("li")!.getAttribute("data-ok")).toBe("true");
   });
