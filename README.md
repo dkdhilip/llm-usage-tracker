@@ -130,3 +130,7 @@ The full list, with defaults: [docs/configuration.md](docs/configuration.md).
 - **Deploy:** one Docker image plus one managed Postgres
 - **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs ruff, pytest (Postgres and Redis services),
   the SDK example tests, tsc + vitest + build and `docker build` on every push and pull request.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Dhilip Kumar S.
