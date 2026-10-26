@@ -294,7 +294,9 @@ def test_images_are_encrypted_at_rest(env):
     _chat(c, key, [{"type": "image_url", "image_url": {"url": DATA_PNG}}])
     with SessionLocal() as db:
         raw = bytes(db.scalar(text("select data_encrypted from usage_content_images")))
-    assert raw.startswith(b"gAAAA") and b"PNG" not in raw and b"png-body" not in raw  # a Fernet token
+    # a Fernet token that holds neither the image bytes nor their base64 (checking the whole image, not a 3-letter
+    # fragment like b"PNG", which random base64 text can contain by chance)
+    assert raw.startswith(b"gAAAA") and PNG not in raw and B64(PNG).encode() not in raw
     assert crypto.decrypt_bytes(raw) == PNG
 
 
