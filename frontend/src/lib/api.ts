@@ -64,9 +64,33 @@ async function req<T>(path: string, init: RequestInit = {}, retriedAfterCsrf = f
         sessionExpiredHandler?.();
       }
     }
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    throw new Error(friendlyDetail(detail));
   }
   return (await res.json()) as T;
+}
+
+/** A readable message for an error body. FastAPI sends request-validation failures as a LIST of
+ *  {type, loc, msg, ...}; showing that raw (as it used to be) put JSON in front of the user. */
+export function friendlyDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (
+    Array.isArray(detail) &&
+    detail.length > 0 &&
+    detail.every((d) => d && typeof d === "object" && "msg" in (d as object))
+  ) {
+    const msgs = (detail as { loc?: unknown[]; type?: string; msg: string }[]).map((d) => {
+      const field = String(Array.isArray(d.loc) ? (d.loc[d.loc.length - 1] ?? "") : "");
+      const type = String(d.type ?? "");
+      if (field === "username" && (type === "string_pattern_mismatch" || type.startsWith("string_too_"))) {
+        return "Username can only use letters, digits, . _ - (3-32 characters, no spaces, and no @: it is not an email address).";
+      }
+      if (field === "password" && type === "string_too_short") return "Password must be at least 8 characters.";
+      if (!field) return d.msg;
+      return `${field.charAt(0).toUpperCase()}${field.slice(1).replace(/_/g, " ")}: ${d.msg}`;
+    });
+    return [...new Set(msgs)].join(" ");
+  }
+  return JSON.stringify(detail);
 }
 
 // ---- types ----

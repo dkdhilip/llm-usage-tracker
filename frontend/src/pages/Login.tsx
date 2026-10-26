@@ -57,6 +57,11 @@ export function Login() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
+            {mode === "signup" && (
+              <span className="mt-1 block text-[11px] font-normal text-fg-subtle" data-testid="username-rules">
+                3-32 characters: letters, digits, . _ - (an email address won't work here)
+              </span>
+            )}
           </label>
           <label className="block text-xs font-medium text-fg-muted">
             Password
