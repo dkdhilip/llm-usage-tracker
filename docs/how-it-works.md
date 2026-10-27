@@ -60,7 +60,7 @@ price table for that workspace's own cost calculations only (`cost_source: "work
 uniformly across every endpoint. See [Model pricing registry](data-model.md#model-pricing-registry) below.
 
 **Workspace live mode.** The Workspace Admin attaches the workspace's **own**
-OpenAI/Anthropic/OpenRouter/Gemini key(s) (encrypted at rest, shown back only as `····last4`),
+OpenAI/Anthropic/Gemini/OpenRouter key(s) (encrypted at rest, shown back only as `····last4`),
 each with its **own monthly spend cap** (`LIVE_CAP_DEFAULT_USD` = $5 until set). The workspace's
 virtual keys call real providers billed to that key, blocked once that provider's monthly spend
 hits its cap. Each key has an **on/off** flag (`allow_live`) the admin toggles to pause billing

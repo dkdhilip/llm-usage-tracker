@@ -187,7 +187,7 @@ function ProvidersCard({
     <Card title="Provider keys">
       <div className="space-y-3 text-sm">
         <p className="text-xs text-fg-muted">
-          Attach the workspace's own OpenAI / Anthropic / OpenRouter / Gemini key and set a
+          Attach the workspace's own OpenAI / Anthropic / Gemini / OpenRouter key and set a
           monthly cap. Virtual keys for a configured provider hit the real provider on this key,
           up to its cap. Only the last 4 digits are shown back.
         </p>
