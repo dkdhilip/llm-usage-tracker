@@ -16,7 +16,7 @@ script-readable (the SPA echoes it) but is otherwise `Lax`/`Secure` like the ses
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/healthz` | — | health / warmup (`{status, version}`) |
-| GET | `/api/models` | — | configured pricing table (per provider/model) |
+| GET | `/api/models` | — | the models on offer with their current price per provider/model, plus `status` (`active`, `preview` or `deprecated`; deprecated ones also carry `shutdown_date` and `replacement`). Retired models stay priced for old usage but are not listed |
 | POST | `/api/auth/signup` `\|` `/login` | — | `{username, password}` → `httpOnly` session cookie, `{authenticated, user:{id, username, workspace:{id,name,role}|null}}` |
 | POST `\|` GET | `/api/auth/logout` `\|` `/me` | — | clear the cookie / current principal |
 | GET `\|` DELETE | `/api/account` | user | `{username, workspace, live_cap_default_usd}` / delete my account (`400` if I'm the sole admin of a non-empty workspace) |

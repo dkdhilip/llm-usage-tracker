@@ -64,7 +64,7 @@ UPSTREAM = {
 # price table, so its cost is honestly "unknown" until the workspace prices it (never a made-up number).
 RECORDED = {
     "openai": ("gpt-4o-mini", "configured"),
-    "anthropic": ("claude-haiku-4-5-20251001", "unknown"),
+    "anthropic": ("claude-haiku-4-5-20251001", "configured"),  # the dated snapshot resolves to claude-haiku-4-5
     "gemini": ("gemini-3.8-flash", "configured"),
 }
 

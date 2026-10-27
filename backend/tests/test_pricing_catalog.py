@@ -59,7 +59,10 @@ def test_retired_models_stay_priced_but_are_not_offered():
 
 
 def test_models_google_no_longer_serves_to_new_accounts_are_not_offered():
-    assert not {k for k in _listed() if k[0] == "gemini" and k[1].startswith("gemini-2.5")}
+    restricted = {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"}
+    assert not {k for k in _listed() if k[0] == "gemini" and k[1] in restricted}
+    for model in restricted:
+        assert pricing.price_for("gemini", model) is not None  # still priced for accounts that already use them
 
 
 def test_estimates_use_the_new_prices_and_unknown_models_stay_unknown():

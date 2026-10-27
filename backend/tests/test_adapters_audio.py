@@ -6,8 +6,9 @@ calls.
 
 The core architectural question this file answers, per operation:
   transcription (whisper-1)          -> duration_seconds -> configured cost
-  transcription (gpt-4o-transcribe)  -> prompt/completion tokens -> unknown cost (unregistered)
-  speech (tts-1)                     -> characters -> configured cost
+  transcription (gpt-4o-transcribe)  -> prompt/completion tokens -> configured cost
+  transcription (an unregistered one) -> prompt/completion tokens -> unknown cost
+  speech (tts-1, tts-1-hd)           -> characters -> configured cost
   speech (an unregistered TTS model) -> characters -> unknown cost
 Never tokens for either, by default. See test_*_billing_dimension_* below.
 """
@@ -67,16 +68,33 @@ def test_transcription_whisper1_bills_by_duration_not_tokens(client, admin_clien
     assert row["cost"] == round(12.5 / 60 * 0.006, 6)
 
 
-def test_transcription_token_billed_model_unregistered_cost_unknown(client, admin_client, make_live_key, mock_provider):
-    """gpt-4o-transcribe bills by token (verified against OpenAI's own API
-    reference) — captured as real prompt/completion tokens, not duration.
-    Not registered in the token price table -> honest "unknown", not guessed."""
+def test_transcription_token_billed_model_is_priced_from_its_tokens(client, admin_client, make_live_key, mock_provider):
+    """gpt-4o-transcribe bills by token (audio in, text out) - captured as real prompt/completion tokens, not
+    duration, and priced from the token table ($2.50 in / $10 out per 1M, OpenAI's pricing page)."""
     k = make_live_key(allowed_providers=["openai"])
     r = client.post(
         "/v1/audio/transcriptions",
         headers=_bearer(k["key"]),
         files=_audio_file(),
         data={"model": "gpt-4o-transcribe"},
+    )
+    assert r.status_code == 200
+    items = admin_client.get("/api/requests").json()["items"]
+    row = items[0]
+    assert row["prompt_tokens"] == 20 and row["completion_tokens"] == 8
+    assert row["duration_seconds"] is None and row["characters"] is None
+    assert row["cost_source"] == "configured"
+    assert row["cost"] == round(20 / 1_000_000 * 2.5 + 8 / 1_000_000 * 10.0, 6)
+
+
+def test_transcription_token_billed_model_unregistered_cost_unknown(client, admin_client, make_live_key, mock_provider):
+    """A token-billed transcription model that is not in the price table -> honest "unknown", not guessed."""
+    k = make_live_key(allowed_providers=["openai"])
+    r = client.post(
+        "/v1/audio/transcriptions",
+        headers=_bearer(k["key"]),
+        files=_audio_file(),
+        data={"model": "gpt-transcribe-unregistered"},
     )
     assert r.status_code == 200
     items = admin_client.get("/api/requests").json()["items"]
@@ -220,11 +238,25 @@ def test_speech_bills_by_characters_not_tokens(client, admin_client, make_live_k
     assert row["cost"] == round(len(text) / 1_000_000 * 15.0, 6)
 
 
-def test_speech_unregistered_model_characters_captured_cost_unknown(client, admin_client, make_live_key, mock_provider):
+def test_speech_hd_model_characters_are_priced_at_its_own_rate(client, admin_client, make_live_key, mock_provider):
     k = make_live_key(allowed_providers=["openai"])
     r = client.post(
         "/v1/audio/speech",
         json={"model": "tts-1-hd", "input": "hi", "voice": "alloy"},
+        headers=_bearer(k["key"]),
+    )
+    assert r.status_code == 200
+    row = admin_client.get("/api/requests").json()["items"][0]
+    assert row["characters"] == 2
+    assert row["cost_source"] == "configured"
+    assert row["cost"] == round(2 / 1_000_000 * 30.0, 6)  # $30 per 1M characters, not tts-1's $15
+
+
+def test_speech_unregistered_model_characters_captured_cost_unknown(client, admin_client, make_live_key, mock_provider):
+    k = make_live_key(allowed_providers=["openai"])
+    r = client.post(
+        "/v1/audio/speech",
+        json={"model": "tts-unregistered", "input": "hi", "voice": "alloy"},
         headers=_bearer(k["key"]),
     )
     assert r.status_code == 200
