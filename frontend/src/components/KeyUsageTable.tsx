@@ -2,12 +2,23 @@ import { useState } from "react";
 import type { ByKeyRow } from "../lib/api";
 import { Card } from "./Card";
 import { num, relTime, tokens, usd } from "../lib/format";
+import { DEFAULT_KEY_STATUSES, type KeyStatus } from "../lib/keyOptions";
+import { KeyStatusFilter } from "./KeyStatusFilter";
 
 type SortKey = "cost" | "total_tokens" | "requests";
 
-export function KeyUsageTable({ rows }: { rows: ByKeyRow[] }) {
+export function KeyUsageTable({
+  rows,
+  statusOf,
+}: {
+  rows: ByKeyRow[];
+  /** a key's status; the Dashboard passes "active" for a key it does not know */
+  statusOf: (keyId: number) => KeyStatus;
+}) {
   const [sort, setSort] = useState<SortKey>("cost");
-  const sorted = [...rows].sort((a, b) => b[sort] - a[sort]);
+  const [statuses, setStatuses] = useState<KeyStatus[]>(DEFAULT_KEY_STATUSES);
+  const shown = rows.filter((r) => statuses.includes(statusOf(r.key_id)));
+  const sorted = [...shown].sort((a, b) => b[sort] - a[sort]);
 
   const header = (key: SortKey, label: string) => (
     <button
@@ -19,7 +30,7 @@ export function KeyUsageTable({ rows }: { rows: ByKeyRow[] }) {
   );
 
   return (
-    <Card title="Per-key usage">
+    <Card title="Per-key usage" right={<KeyStatusFilter value={statuses} onChange={setStatuses} />}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -36,13 +47,18 @@ export function KeyUsageTable({ rows }: { rows: ByKeyRow[] }) {
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={6} className="py-8 text-center text-fg-subtle">
-                  No usage in this range yet
+                  {rows.length === 0 ? "No usage in this range yet" : "No keys with these statuses in this range"}
                 </td>
               </tr>
             )}
             {sorted.map((r) => (
               <tr key={r.key_id} className="border-b border-line last:border-0">
-                <td className="py-2 pr-4 font-medium text-fg">{r.label}</td>
+                <td className="py-2 pr-4 font-medium text-fg">
+                  {r.label}
+                  {statusOf(r.key_id) !== "active" && (
+                    <span className="ml-2 text-xs font-normal capitalize text-fg-subtle">{statusOf(r.key_id)}</span>
+                  )}
+                </td>
                 <td className="py-2 pr-4 font-mono text-xs text-fg-muted">
                   {r.key_prefix}…
                 </td>
