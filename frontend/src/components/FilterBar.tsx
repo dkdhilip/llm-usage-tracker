@@ -1,5 +1,6 @@
 import type { ModelInfo } from "../lib/api";
 import type { KeyOption } from "../lib/keyOptions";
+import { KeyPicker } from "./KeyPicker";
 import {
   DEFAULT_RANGE_DAYS,
   RANGE_OPTIONS,
@@ -114,18 +115,12 @@ export function FilterBar({
         ))}
       </select>
 
-      <select
+      <KeyPicker
         className={selectClass}
+        keys={keys}
         value={filters.keyId}
-        onChange={(e) => onChange({ ...filters, keyId: e.target.value })}
-      >
-        <option value="">All keys</option>
-        {keys.map((k) => (
-          <option key={k.key_id} value={String(k.key_id)}>
-            {k.label}
-          </option>
-        ))}
-      </select>
+        onChange={(keyId) => onChange({ ...filters, keyId })}
+      />
 
       {dirty && (
         <button

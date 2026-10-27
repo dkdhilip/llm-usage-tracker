@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
   type ByKeyRow,
@@ -65,6 +65,8 @@ export function Dashboard() {
     ]).then(([keys, used]) => setAllKeys(keyOptions(keys, used)));
   }, []);
 
+  const statusById = useMemo(() => new Map(allKeys.map((k) => [k.key_id, k.status])), [allKeys]);
+
   const scopeLabel = isWorkspaceAdmin
     ? `workspace: ${workspace?.name ?? ""}`
     : "your assigned keys";
@@ -103,7 +105,7 @@ export function Dashboard() {
 
       <UsageByModelChart data={byModel} />
 
-      <KeyUsageTable rows={byKey} />
+      <KeyUsageTable rows={byKey} statusOf={(id) => statusById.get(id) ?? "active"} />
     </div>
   );
 }
