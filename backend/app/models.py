@@ -219,7 +219,7 @@ class ProviderCredential(Base):
     workspace_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    provider: Mapped[str] = mapped_column(String, nullable=False)  # openai|anthropic|openrouter|gemini
+    provider: Mapped[str] = mapped_column(String, nullable=False)  # openai|anthropic|gemini|openrouter
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)  # Fernet token
     last4: Mapped[str] = mapped_column(String(8), nullable=False)  # display only
     # Monthly ceiling (USD) on live spend routed through this provider key.

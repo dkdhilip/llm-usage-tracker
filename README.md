@@ -2,7 +2,7 @@
 
 A **multi-tenant LLM gateway**: each organization gets an isolated **Workspace**, issues virtual
 API keys with per-provider access control, sends requests through the proxy, and tracks token
-usage and cost on a dashboard. OpenAI · Anthropic · OpenRouter · Google Gemini.
+usage and cost on a dashboard. OpenAI · Anthropic · Google Gemini · OpenRouter.
 
 ## What it does
 
@@ -67,9 +67,9 @@ the request go to `/v1/v1/...`, which does not exist.
 | Provider | SDK | Base URL | Model name (example only) |
 |---|---|---|---|
 | OpenAI | `openai` | `https://llm-usage-tracker-97q0.onrender.com/v1` | `openai/gpt-4o-mini` |
-| OpenRouter | `openai` (same client) | `https://llm-usage-tracker-97q0.onrender.com/v1` | `openrouter/<vendor>/<model>` |
 | Anthropic | `anthropic` | `https://llm-usage-tracker-97q0.onrender.com` (no `/v1`) | `claude-sonnet-5-5` |
 | Google Gemini | `google-genai` | `https://llm-usage-tracker-97q0.onrender.com` (no `/v1`) | `gemini-3.8-flash` |
+| OpenRouter | `openai` (same client) | `https://llm-usage-tracker-97q0.onrender.com/v1` | `openrouter/<vendor>/<model>` |
 
 The model names are **only examples**: use any model your virtual key allows (`GET /api/models` lists the models
 the gateway knows prices for).
@@ -87,9 +87,6 @@ from openai import OpenAI
 client = OpenAI()
 client.chat.completions.create(model="openai/gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
 
-# OpenRouter: the same client, with an "openrouter/" model name
-client.chat.completions.create(model="openrouter/anthropic/claude-sonnet-5.5", messages=[{"role": "user", "content": "hi"}])
-
 # Anthropic
 from anthropic import Anthropic
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], base_url=os.environ["ANTHROPIC_BASE_URL"])
@@ -99,6 +96,10 @@ client.messages.create(model="claude-sonnet-5-5", max_tokens=256, messages=[{"ro
 from google import genai
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"base_url": os.environ["GOOGLE_GEMINI_BASE_URL"]})
 client.models.generate_content(model="gemini-3.8-flash", contents="hi")
+
+# OpenRouter: the OpenAI client again, with an "openrouter/" model name
+client = OpenAI()
+client.chat.completions.create(model="openrouter/anthropic/claude-sonnet-5.5", messages=[{"role": "user", "content": "hi"}])
 ```
 
 Things to know:

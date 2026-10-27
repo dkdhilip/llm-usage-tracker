@@ -58,7 +58,7 @@ from app.security import require_virtual_key
 router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 
 _NATIVE_ADAPTER_PROVIDERS = ("openai", "openrouter")  # full-fidelity via openai_adapter
-_SSE_PROVIDERS = ("openai", "openrouter", "gemini")  # legacy-path providers with real SSE
+_SSE_PROVIDERS = ("openai", "gemini", "openrouter")  # legacy-path providers with real SSE
 
 
 def _prompt_from_messages(messages: list[dict]) -> str:

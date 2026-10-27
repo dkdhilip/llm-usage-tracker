@@ -14,7 +14,7 @@ import httpx
 
 from app.config import settings
 
-SUPPORTED = ("openai", "anthropic", "openrouter", "gemini")
+SUPPORTED = ("openai", "anthropic", "gemini", "openrouter")
 
 ENV_VARS = {
     "openai": "OPENAI_API_KEY",
@@ -317,7 +317,7 @@ def call_provider(
             None,  # Anthropic returns no per-request cost
         )
 
-    # openai, openrouter and gemini share the OpenAI chat-completions shape
+    # openai, gemini and openrouter share the OpenAI chat-completions shape
     body: dict = {"model": model, "messages": [{"role": "user", "content": prompt}]}
     if provider == "openrouter":
         headers = {
@@ -342,7 +342,7 @@ def call_provider(
 def stream_openai_compatible(
     provider: str, model: str, prompt: str, api_key: str | None = None
 ) -> Iterator[tuple[str, object]]:
-    """True SSE passthrough for OpenAI-shaped providers (openai, openrouter, gemini).
+    """True SSE passthrough for OpenAI-shaped providers (openai, gemini, openrouter).
 
     Yields ("delta", text) for each content delta, then a final
     ("done", {"prompt_tokens", "completion_tokens", "cost"}). Raises on transport

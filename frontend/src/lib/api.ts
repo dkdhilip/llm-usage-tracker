@@ -94,7 +94,7 @@ export function friendlyDetail(detail: unknown): string {
 }
 
 // ---- types ----
-export const PROVIDERS = ["openai", "anthropic", "openrouter", "gemini"] as const;
+export const PROVIDERS = ["openai", "anthropic", "gemini", "openrouter"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 export type WorkspaceRole = "admin" | "member";
 

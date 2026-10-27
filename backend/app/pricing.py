@@ -408,7 +408,7 @@ def _load_overrides() -> dict[tuple[str, str], Pricing]:
 CONFIGURED_PRICING.update(_load_overrides())
 CONFIGURED_PRICING.update({k: v for k, v in LEGACY_PRICING.items() if k not in CONFIGURED_PRICING})
 
-PROVIDERS = ("openai", "anthropic", "openrouter", "gemini")
+PROVIDERS = ("openai", "anthropic", "gemini", "openrouter")
 
 
 def _today() -> str:
