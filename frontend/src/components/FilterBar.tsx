@@ -1,4 +1,5 @@
-import type { ByKeyRow, ModelInfo } from "../lib/api";
+import type { ModelInfo } from "../lib/api";
+import type { KeyOption } from "../lib/keyOptions";
 import {
   DEFAULT_RANGE_DAYS,
   RANGE_OPTIONS,
@@ -18,7 +19,7 @@ export function FilterBar({
   filters: Filters;
   onChange: (f: Filters) => void;
   models: ModelInfo[];
-  keys: ByKeyRow[];
+  keys: KeyOption[];
 }) {
   const providers = Array.from(new Set(models.map((m) => m.provider)));
   const visibleModels = filters.provider

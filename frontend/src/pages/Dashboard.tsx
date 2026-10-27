@@ -8,6 +8,7 @@ import {
   type UsageSummary,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { keyOptions, type KeyOption } from "../lib/keyOptions";
 import { defaultFilters, toQuery, type Filters } from "../lib/filters";
 import { FilterBar } from "../components/FilterBar";
 import { SummaryCards } from "../components/SummaryCards";
@@ -55,10 +56,13 @@ export function Dashboard() {
     load();
   }, [load]);
 
-  // key list for the filter dropdown — unfiltered so all keys are always selectable
-  const [allKeys, setAllKeys] = useState<ByKeyRow[]>([]);
+  // key list for the filter dropdown: every key (even one with no requests yet) plus any key that has usage
+  const [allKeys, setAllKeys] = useState<KeyOption[]>([]);
   useEffect(() => {
-    api.usageByKey("").then(setAllKeys).catch(() => setAllKeys([]));
+    Promise.all([
+      api.listKeys().catch(() => []),
+      api.usageByKey("").catch(() => []),
+    ]).then(([keys, used]) => setAllKeys(keyOptions(keys, used)));
   }, []);
 
   const scopeLabel = isWorkspaceAdmin
