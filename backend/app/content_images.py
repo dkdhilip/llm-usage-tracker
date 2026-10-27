@@ -72,12 +72,13 @@ def sniff(data: bytes) -> str | None:
 def _decode(b64: str) -> bytes | None:
     s = "".join(b64.split())  # tolerate wrapped lines
     s += "=" * (-len(s) % 4)
-    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
-        try:
-            return decoder(s)
-        except (binascii.Error, ValueError):
-            continue
-    return None
+    # Pick the alphabet from the data. Never "try standard first": b64decode silently DROPS '-' and '_' instead of
+    # failing, so URL-safe input (what the Google Gemini Python SDK sends) decoded to a corrupted image.
+    decoder = base64.urlsafe_b64decode if ("-" in s or "_" in s) else base64.b64decode
+    try:
+        return decoder(s)
+    except (binascii.Error, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------------------------- extraction

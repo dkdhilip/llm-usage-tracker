@@ -496,3 +496,32 @@ def test_caps_are_exact_under_a_concurrent_burst(env, monkeypatch):
         r for row in _contents() for r in content_capture.load(row).get("images_skipped", [])
     ]
     assert len(skipped) == 10 and {x["reason"] for x in skipped} == {"cap_reached"}
+
+
+# The Google Gemini Python SDK sends image bytes as URL-safe base64 ('-' and '_'). The standard decoder silently
+# DROPS those characters instead of failing, which stored a corrupted file that still started with valid PNG magic
+# bytes (so it passed the type check) and showed as a broken image.
+_SDK_PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 64 + b"\xfb\xff\xbe\xff"  # encodes with both '-' and '_'
+
+
+@pytest.mark.parametrize("encode", [base64.urlsafe_b64encode, base64.b64encode], ids=["urlsafe", "standard"])
+def test_decode_is_exact_for_both_base64_alphabets(encode):
+    b64 = encode(_SDK_PNG).decode()
+    assert ("-" in b64 or "_" in b64) == (encode is base64.urlsafe_b64encode)  # the fixture really uses the alphabet
+    assert content_images._decode(b64) == _SDK_PNG
+    assert content_images._decode(b64.rstrip("=")) == _SDK_PNG  # unpadded, as some SDKs send it
+    assert content_images._decode("\n".join(b64[i : i + 76] for i in range(0, len(b64), 76))) == _SDK_PNG  # wrapped
+
+
+def test_decode_still_rejects_garbage():
+    assert content_images._decode("%%%") is None or content_images._decode("%%%") == b""
+
+
+def test_a_url_safe_gemini_image_is_stored_byte_for_byte(env):
+    c, key, prov = env
+    _on(c)
+    body = {"contents": [{"role": "user", "parts": [
+        {"text": "describe"}, {"inlineData": {"mimeType": "image/png", "data": base64.urlsafe_b64encode(_SDK_PNG).decode()}}]}]}
+    staged, skipped = content_images.stage(content_images.request_candidates("gemini", body))
+    assert not skipped and len(staged) == 1
+    assert crypto.decrypt_bytes(staged[0].token) == _SDK_PNG  # exactly what the client sent
