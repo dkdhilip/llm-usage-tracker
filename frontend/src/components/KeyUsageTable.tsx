@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { ByKeyRow } from "../lib/api";
 import { Card } from "./Card";
-import { num, relTime, tokens, usd } from "../lib/format";
+import { num, relTime, tokens } from "../lib/format";
+import { CostCell } from "./CostCell";
 import { DEFAULT_KEY_STATUSES, type KeyStatus } from "../lib/keyOptions";
 import { KeyStatusFilter } from "./KeyStatusFilter";
 
@@ -31,8 +32,8 @@ export function KeyUsageTable({
 
   return (
     <Card title="Per-key usage" right={<KeyStatusFilter value={statuses} onChange={setStatuses} />}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Per-key usage table">
+        <table className="w-full min-w-[40rem] text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-subtle">
               <th className="py-2 pr-4">User / Label</th>
@@ -65,7 +66,7 @@ export function KeyUsageTable({
                 <td className="py-2 pr-4 text-right tabular-nums">{num(r.requests)}</td>
                 <td className="py-2 pr-4 text-right tabular-nums">{tokens(r.total_tokens)}</td>
                 <td className="py-2 pr-4 text-right tabular-nums font-medium">
-                  {usd(r.cost)}
+                  <CostCell cost={r.cost} requests={r.requests} unpriced={r.unpriced_requests} />
                 </td>
                 <td className="py-2 pr-0 text-right text-xs text-fg-subtle">
                   {relTime(r.last_used_at)}

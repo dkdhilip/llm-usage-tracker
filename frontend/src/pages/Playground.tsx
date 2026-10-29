@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type ChatResult, type KeyInspect, type ModelInfo } from "../lib/api";
 import { Card } from "../components/Card";
-import { costSourceLabel, usd } from "../lib/format";
+import { costSourceLabel, providerName, usd } from "../lib/format";
 
 const DEFAULT_PROMPT =
   "In two sentences, explain what an LLM gateway does and why usage tracking matters.";
@@ -90,7 +90,7 @@ export function Playground() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
-      <Card title="Send a request">
+      <Card title="Send a request" level={1}>
         <div className="space-y-3">
           <label className="block text-xs font-medium text-fg-muted">
             Virtual key
@@ -122,7 +122,7 @@ export function Playground() {
                 {!inspect && <option value="">enter a key first</option>}
                 {inspect?.providers.map((p) => (
                   <option key={p.provider} value={p.provider}>
-                    {p.provider}
+                    {providerName(p.provider)}
                     {p.ready ? "" : " · no key"}
                   </option>
                 ))}

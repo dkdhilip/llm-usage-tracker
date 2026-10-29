@@ -13,7 +13,8 @@ import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
 import { ConnectPanel } from "../components/ConnectPanel";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { num, relTime, usd } from "../lib/format";
+import { num, providerName, relTime, usd } from "../lib/format";
+import { CostCell } from "../components/CostCell";
 
 // ---------- provider keys + caps ----------
 function ProviderRow({
@@ -53,7 +54,7 @@ function ProviderRow({
   return (
     <li className="space-y-1.5 border-b border-line pb-2 last:border-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
-        <span className="font-medium capitalize">{p.provider}</span>
+        <span className="font-medium">{providerName(p.provider)}</span>
         {p.source === "env" ? (
           <span className="ml-auto rounded bg-fill px-1.5 py-0.5 text-[10px] text-fg-muted">
             set via server env
@@ -233,43 +234,47 @@ function MembersCard({
   return (
     <Card title={`Members (${members.length})`}>
       <div className="space-y-3">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-subtle">
-              <th className="py-1.5 pr-3">User</th>
-              <th className="py-1.5 pr-3">Role</th>
-              <th className="py-1.5 pr-3 text-right">Keys</th>
-              <th className="py-1.5 pr-3 text-right">Requests</th>
-              <th className="py-1.5 pr-0" />
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => (
-              <tr key={m.user_id} className="border-b border-line last:border-0">
-                <td className="py-1.5 pr-3 font-medium">{m.username}</td>
-                <td className="py-1.5 pr-3 text-xs text-fg-muted">
-                  {m.role === "admin" ? "Workspace Admin" : "Team Member"}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{m.assigned_keys}</td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{num(m.requests)}</td>
-                <td className="py-1.5 pr-0 text-right">
-                  {m.role === "member" && (
-                    <button
-                      onClick={() =>
-                        window.confirm(`Remove ${m.username} from the workspace?`) &&
-                        void run("rm" + m.user_id, () => api.removeMember(m.user_id))
-                      }
-                      disabled={busy !== null}
-                      className="rounded border border-line px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </td>
+        <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Members table">
+          <table className="w-full min-w-[28rem] text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-subtle">
+                <th className="py-1.5 pr-3">User</th>
+                <th className="py-1.5 pr-3">Role</th>
+                <th className="py-1.5 pr-3 text-right">Keys</th>
+                <th className="py-1.5 pr-3 text-right">Requests</th>
+                <th className="py-1.5 pr-0">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m.user_id} className="border-b border-line last:border-0">
+                  <td className="py-1.5 pr-3 font-medium">{m.username}</td>
+                  <td className="py-1.5 pr-3 text-xs text-fg-muted">
+                    {m.role === "admin" ? "Workspace Admin" : "Team Member"}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{m.assigned_keys}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{num(m.requests)}</td>
+                  <td className="py-1.5 pr-0 text-right">
+                    {m.role === "member" && (
+                      <button
+                        onClick={() =>
+                          window.confirm(`Remove ${m.username} from the workspace?`) &&
+                          void run("rm" + m.user_id, () => api.removeMember(m.user_id))
+                        }
+                        disabled={busy !== null}
+                        className="rounded border border-line px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
         <div className="border-t border-line pt-3">
           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">
@@ -461,7 +466,7 @@ function CreateKeyForm({
                     disabled={!ok}
                     onChange={() => toggle(p)}
                   />
-                  <span className="capitalize">{p}</span>
+                  <span>{providerName(p)}</span>
                 </label>
               );
             })}
@@ -474,7 +479,7 @@ function CreateKeyForm({
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="text-xs font-medium text-fg-muted">
             Assign to
             <select
@@ -519,7 +524,7 @@ function CreateKeyForm({
         </label>
 
         {budgetPeriod === "custom" && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="text-xs font-medium text-fg-muted">
               Budget from
               <input
@@ -828,6 +833,8 @@ function ImageLoggingSection({
           </div>
           <div
             role="progressbar"
+            aria-label="Image storage used"
+            aria-valuetext={`${mb(used)} of ${mb(cap)}`}
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}
@@ -1142,8 +1149,8 @@ export function Workspace() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+        <div className="min-w-0 space-y-4">
           <ProvidersCard
             providers={providers}
             defaultCap={defaultCap}
@@ -1152,7 +1159,7 @@ export function Workspace() {
           {ws && <ContentLoggingCard ws={ws} onChange={refresh} />}
           {ws && <SettingsCard ws={ws} onChange={refresh} />}
         </div>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <CreateKeyForm
             onCreated={refresh}
             configuredProviders={configured}
@@ -1179,8 +1186,8 @@ export function Workspace() {
           ) : undefined
         }
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Virtual keys table">
+          <table className="w-full min-w-[60rem] text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-subtle">
                 <th className="py-2 pr-4">Label</th>
@@ -1269,7 +1276,7 @@ export function Workspace() {
                     )}
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">{num(k.requests)}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{usd(k.cost)}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums"><CostCell cost={k.cost} requests={k.requests} unpriced={k.unpriced_requests} /></td>
                   <td className="py-2 pr-4">
                     {k.monthly_budget_usd == null ? (
                       <span className="text-xs text-fg-subtle">unlimited</span>
@@ -1388,8 +1395,8 @@ export function Workspace() {
           }
         >
           {showDeleted ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-fg-subtle">
+            <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Deleted keys table">
+              <table className="w-full min-w-[32rem] text-sm text-fg-subtle">
                 <thead>
                   <tr className="border-b border-line text-left text-xs uppercase tracking-wide">
                     <th className="py-2 pr-4">Label</th>
@@ -1405,7 +1412,7 @@ export function Workspace() {
                       <td className="py-2 pr-4 font-medium">{k.label}</td>
                       <td className="py-2 pr-4 font-mono text-xs">{k.key_prefix}…</td>
                       <td className="py-2 pr-4 text-right tabular-nums">{num(k.requests)}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">{usd(k.cost)}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums"><CostCell cost={k.cost} requests={k.requests} unpriced={k.unpriced_requests} /></td>
                       <td className="py-2 pr-0 text-xs">{relTime(k.deleted_at ?? null)}</td>
                     </tr>
                   ))}

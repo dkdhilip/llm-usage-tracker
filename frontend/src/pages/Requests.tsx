@@ -10,7 +10,7 @@ import {
   type RequestRow,
 } from "../lib/api";
 import { Card } from "../components/Card";
-import { costSourceLabel, relTime, usd } from "../lib/format";
+import { costSourceLabel, providerName, relTime, usd } from "../lib/format";
 
 const FILTER_KEYS = ["key_id", "provider", "model", "status", "start", "end"] as const;
 
@@ -141,14 +141,14 @@ export function Requests() {
         </Field>
         <Field label="Provider">
           <select
-            className="rounded border border-line bg-surface px-2 py-1 text-xs capitalize"
+            className="rounded border border-line bg-surface px-2 py-1 text-xs"
             value={params.get("provider") ?? ""}
             onChange={(e) => setFilter("provider", e.target.value)}
           >
             <option value="">All</option>
             {PROVIDERS.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {providerName(p)}
               </option>
             ))}
           </select>
@@ -211,8 +211,8 @@ export function Requests() {
       )}
 
       <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Request log table">
+          <table className="w-full min-w-[40rem] text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-subtle">
                 <th className="py-2 pr-3">When</th>

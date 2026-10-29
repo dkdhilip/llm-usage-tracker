@@ -235,6 +235,7 @@ export interface IntegrationGuideData {
 }
 
 export interface KeyRow {
+  unpriced_requests?: number; // of `requests`, how many have no cost (the model has no price yet)
   // Per-key content logging (default off). A key is only captured when the workspace master switch is on too.
   content_logging_enabled?: boolean;
   image_logging_enabled?: boolean;
@@ -355,6 +356,7 @@ export interface UsageSummary {
   errors: number;
   tokens_per_sec: number;
   active_keys: number;
+  unpriced_requests?: number; // requests with no cost at all (the model has no price yet)
 }
 
 export interface TimeseriesPoint {
@@ -363,9 +365,11 @@ export interface TimeseriesPoint {
   requests: number;
   total_tokens: number;
   cost: number;
+  unpriced_requests?: number;
 }
 
 export interface ByKeyRow {
+  unpriced_requests?: number; // of `requests`, how many have no cost (the model has no price yet)
   key_id: number;
   label: string;
   key_prefix: string;

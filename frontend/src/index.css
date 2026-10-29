@@ -8,8 +8,9 @@
   --surface-2: 248 250 252; /* page background */
   --fill: 241 245 249; /* chips, hover fills (slate-100) */
   --fg: 30 41 59; /* primary text (slate-800) */
-  --fg-muted: 100 116 139; /* secondary text (slate-500) */
-  --fg-subtle: 148 163 184; /* tertiary text (slate-400) */
+  /* Secondary and tertiary text are at least 4.5:1 (WCAG AA) on the surface, page and chip fills. */
+  --fg-muted: 82 95 114; /* secondary text */
+  --fg-subtle: 100 111 128; /* tertiary text (4.6:1 on the chip fill, the tightest case) */
   --line: 226 232 240; /* borders (slate-200) */
 }
 
@@ -20,8 +21,14 @@
   --fill: 30 41 59; /* slate-800 — sits above the card */
   --fg: 226 232 240; /* slate-200 */
   --fg-muted: 148 163 184; /* slate-400 */
-  --fg-subtle: 100 116 139; /* slate-500 */
+  --fg-subtle: 130 144 166; /* 4.5:1 on the chip fill, the tightest case */
   --line: 30 41 59; /* slate-800 */
+}
+
+/* Brand-coloured text (links, the sort that is active) is indigo-600, which is too dark on the dark surfaces
+   (2.8:1). A lighter indigo keeps the same hue at 5.9:1. Backgrounds and buttons are unchanged. */
+:root.dark .text-brand-600 {
+  color: rgb(129 140 248); /* indigo-400 */
 }
 
 html,

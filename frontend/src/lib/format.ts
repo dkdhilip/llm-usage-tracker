@@ -1,3 +1,49 @@
+const PROVIDER_NAMES: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Gemini",
+  openrouter: "OpenRouter",
+};
+
+/** A provider id as people write it: "openai" -> "OpenAI", "openrouter" -> "OpenRouter". */
+export function providerName(p: string): string {
+  return PROVIDER_NAMES[p.toLowerCase()] ?? (p ? p.charAt(0).toUpperCase() + p.slice(1) : p);
+}
+
+export interface CostText {
+  text: string;
+  /** true when the model has no price, so the cost is unknown (not zero) */
+  unknown: boolean;
+  /** extra words after the amount, e.g. "+3 unpriced" when only some requests have a price */
+  note?: string;
+  title?: string;
+}
+
+/** How to show a cost total. `unpriced` is how many of `requests` have no cost at all (the model has no price):
+ *  those add nothing to `cost`, so a bare "$0.000000" would read as "free". Only a request that was priced at
+ *  exactly $0 is free. An API that does not send the count is treated safely: a 0 total counts as unknown. */
+export function costLabel(cost: number, requests: number, unpriced?: number): CostText {
+  if (requests <= 0) return { text: "—", unknown: false };
+  const u = unpriced ?? (cost === 0 ? requests : 0);
+  if (u >= requests) {
+    return {
+      text: "No price yet",
+      unknown: true,
+      title: "These requests have no cost: the model has no price in the catalog, so its cost is unknown (not free).",
+    };
+  }
+  if (u > 0) {
+    return {
+      text: usd(cost),
+      unknown: false,
+      note: `+${num(u)} unpriced`,
+      title: `${num(u)} of ${num(requests)} requests have no price yet, so the real cost is higher than this.`,
+    };
+  }
+  if (cost === 0) return { text: "Free", unknown: false, title: "These requests were priced at $0." };
+  return { text: usd(cost), unknown: false };
+}
+
 export function usd(n: number | null): string {
   if (n == null) return "—";
   if (n >= 1) return `$${n.toFixed(2)}`;

@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { TimeseriesPoint } from "../lib/api";
 import { Card } from "./Card";
 import { providerColor } from "../lib/chartColors";
-import { num, tokens, usd } from "../lib/format";
+import { costLabel, num, providerName, tokens, usd } from "../lib/format";
 import { chartTheme, useTheme } from "../lib/theme";
 
 export type Metric = "requests" | "total_tokens" | "cost";
@@ -57,14 +57,18 @@ export function buildDaily(data: TimeseriesPoint[], metric: Metric) {
   const perDay = new Map<string, Map<string, number>>();
   const totals = new Map<string, number>();
   const requestsBy = new Map<string, number>();
+  const unpricedBy = new Map<string, number>();
   for (const p of data) {
     requestsBy.set(p.provider, (requestsBy.get(p.provider) ?? 0) + p.requests);
+    unpricedBy.set(p.provider, (unpricedBy.get(p.provider) ?? 0) + (p.unpriced_requests ?? 0));
     const v = Number(p[metric]) || 0;
     const m = perDay.get(p.day) ?? new Map<string, number>();
     m.set(p.provider, (m.get(p.provider) ?? 0) + v);
     perDay.set(p.day, m);
     totals.set(p.provider, (totals.get(p.provider) ?? 0) + v);
   }
+  // an API that does not send the unpriced count leaves it unknown, and cost then reads a 0 total as "no price"
+  const unpricedKnown = data.every((p) => p.unpriced_requests !== undefined);
   const days = [...perDay.keys()].sort();
   let axisDays = days;
   if (days.length > 1) {
@@ -84,7 +88,54 @@ export function buildDaily(data: TimeseriesPoint[], metric: Metric) {
     return row;
   });
   const grand = providers.reduce((a, p) => a + (totals.get(p) ?? 0), 0);
-  return { rows, providers, totals, requestsBy, grand, requests: data.reduce((a, p) => a + p.requests, 0) };
+  return {
+    rows,
+    providers,
+    totals,
+    requestsBy,
+    unpricedBy,
+    unpricedKnown,
+    grand,
+    requests: data.reduce((a, p) => a + p.requests, 0),
+  };
+}
+
+export type Daily = ReturnType<typeof buildDaily>;
+
+export interface LegendEntry {
+  provider: string;
+  text: string;
+  note?: string;
+  /** cost view only: the provider's requests have no price, so there is no amount to show */
+  unknown: boolean;
+  title?: string;
+}
+
+/** What each provider's number reads as. In the cost view a provider whose requests have no price says so
+ *  instead of "$0.000000", which would read as "free". */
+export function legendEntries(d: Daily, metric: Metric): LegendEntry[] {
+  return d.providers.map((p) => {
+    const total = d.totals.get(p) ?? 0;
+    if (metric !== "cost") return { provider: p, text: formatMetric(metric, total), unknown: false };
+    const c = costLabel(total, d.requestsBy.get(p) ?? 0, d.unpricedKnown ? d.unpricedBy.get(p) : undefined);
+    return { provider: p, text: c.text, note: c.note, unknown: c.unknown, title: c.title };
+  });
+}
+
+/** The chart in words, for people who cannot see it (a screen reader announces this instead of the drawing). */
+export function overTimeSummary(d: Daily, metric: Metric): string {
+  if (d.rows.length === 0) return "No usage in this range yet.";
+  const label = METRICS.find((m) => m.id === metric)!.label;
+  const n = d.rows.length;
+  const peak = d.rows.reduce((a, r) => (r.total > a.total ? r : a), d.rows[0]);
+  const by = legendEntries(d, metric)
+    .map((e) => `${providerName(e.provider)} ${e.text}${e.note ? ` ${e.note}` : ""}`)
+    .join(", ");
+  return (
+    `${label} per day over ${n} ${n === 1 ? "day" : "days"}, ${formatMetric(metric, d.grand)} in total. ` +
+    (peak.total > 0 ? `Busiest day ${dayLabel(peak.day)} with ${formatMetric(metric, peak.total)}. ` : "") +
+    `By provider: ${by}.`
+  );
 }
 
 export function DayTooltip({
@@ -111,7 +162,7 @@ export function DayTooltip({
           {items.map((p) => (
             <div key={p.dataKey} className="flex items-center gap-2 py-0.5">
               <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-              <span className="capitalize text-fg-muted">{p.dataKey}</span>
+              <span className="text-fg-muted" data-testid="tip-name">{providerName(p.dataKey)}</span>
               <span className="ml-auto pl-4 tabular-nums text-fg">{formatMetric(metric, p.value)}</span>
             </div>
           ))}
@@ -132,7 +183,10 @@ export function DayTooltip({
 export function UsageOverTimeChart({ data }: { data: TimeseriesPoint[] }) {
   const [metric, setMetric] = useState<Metric>("requests");
   const ct = chartTheme(useTheme().isDark);
-  const { rows, providers, totals, requestsBy, grand, requests } = useMemo(() => buildDaily(data, metric), [data, metric]);
+  const daily = useMemo(() => buildDaily(data, metric), [data, metric]);
+  const { rows, grand, requests } = daily;
+  const legend = useMemo(() => legendEntries(daily, metric), [daily, metric]);
+  const summary = useMemo(() => overTimeSummary(daily, metric), [daily, metric]);
   const unit = METRICS.find((m) => m.id === metric)!.unit;
   const days = rows.length;
   const span = days === 1 ? "1 day" : `${days} days`;
@@ -172,28 +226,30 @@ export function UsageOverTimeChart({ data }: { data: TimeseriesPoint[] }) {
               </div>
             </div>
             <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" aria-label="Total per provider">
-              {providers.map((p) => (
-                <li key={p} className="flex items-center gap-1.5" data-testid={`usage-legend-${p}`}>
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: providerColor(p) }} />
-                  <span className="capitalize text-fg-muted">{p}</span>
-                  {metric === "cost" && (totals.get(p) ?? 0) === 0 && (requestsBy.get(p) ?? 0) > 0 ? (
+              {legend.map((e) => (
+                <li key={e.provider} className="flex items-center gap-1.5" data-testid={`usage-legend-${e.provider}`}>
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: providerColor(e.provider) }} />
+                  <span className="text-fg-muted">{providerName(e.provider)}</span>
+                  {e.unknown ? (
                     // $0 would read as "free"; it means these models have no price in the catalog yet
-                    <span
-                      className="text-xs text-fg-subtle"
-                      title="These requests have no cost: the model has no price in the catalog, so its cost is unknown (not free)."
-                    >
-                      no price yet
+                    <span className="text-xs text-fg-muted" title={e.title}>
+                      {e.text}
                     </span>
                   ) : (
-                    <span className="tabular-nums font-medium text-fg">{formatMetric(metric, totals.get(p) ?? 0)}</span>
+                    <span className="tabular-nums font-medium text-fg" title={e.title}>
+                      {e.text}
+                      {e.note && <span className="ml-1 text-xs font-normal text-fg-muted">{e.note}</span>}
+                    </span>
                   )}
                 </li>
               ))}
             </ul>
           </div>
-          <div className="h-64 w-full">
+          {/* The drawing is described in words for a screen reader; the legend above already has the numbers. */}
+          <div className="h-64 w-full" role="img" aria-label={summary}>
+            <div className="h-full w-full" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap="25%">
+              <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap="25%" accessibilityLayer={false}>
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                 <XAxis
                   dataKey="day"
@@ -217,7 +273,7 @@ export function UsageOverTimeChart({ data }: { data: TimeseriesPoint[] }) {
                   cursor={{ fill: ct.grid, opacity: 0.35 }}
                   content={<DayTooltip metric={metric} />}
                 />
-                {providers.map((p) => (
+                {daily.providers.map((p) => (
                   <Bar
                     key={p}
                     dataKey={p}
@@ -229,6 +285,7 @@ export function UsageOverTimeChart({ data }: { data: TimeseriesPoint[] }) {
                 ))}
               </BarChart>
             </ResponsiveContainer>
+            </div>
           </div>
         </>
       )}
