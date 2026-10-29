@@ -87,6 +87,7 @@ class KeyOut(BaseModel):
     requests: int
     total_tokens: int
     cost: float
+    unpriced_requests: int = 0  # of `requests`, how many have no cost (the model has no price yet)
     content_logging_enabled: bool = False
     image_logging_enabled: bool = False
 

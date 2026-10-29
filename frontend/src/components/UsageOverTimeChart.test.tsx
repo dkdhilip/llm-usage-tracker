@@ -106,8 +106,8 @@ describe("UsageOverTimeChart", () => {
     const user = userEvent.setup();
     chart([pt("2026-10-26", "openrouter", 3), { ...pt("2026-10-26", "gemini", 2), cost: 0 }]);
     await user.click(screen.getByRole("button", { name: "Cost" }));
-    expect(within(screen.getByTestId("usage-legend-gemini")).getByText("no price yet")).toBeTruthy();
-    expect(within(screen.getByTestId("usage-legend-openrouter")).queryByText("no price yet")).toBeNull();
+    expect(within(screen.getByTestId("usage-legend-gemini")).getByText("No price yet")).toBeTruthy();
+    expect(within(screen.getByTestId("usage-legend-openrouter")).queryByText("No price yet")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Requests" }));
     expect(within(screen.getByTestId("usage-legend-gemini")).getByText("2")).toBeTruthy(); // other units unaffected
   });
@@ -132,10 +132,10 @@ describe("DayTooltip", () => {
   ];
 
   it("shows the day, the providers that had usage (largest first) and the total", () => {
-    const { container } = render(<DayTooltip active payload={payload} label="2026-10-26" metric="requests" />);
+    render(<DayTooltip active payload={payload} label="2026-10-26" metric="requests" />);
     expect(screen.getByText("Mon, Oct 26")).toBeTruthy();
-    const names = [...container.querySelectorAll("span.capitalize")].map((n) => n.textContent);
-    expect(names).toEqual(["openrouter", "openai"]); // gemini had 0 that day: left out
+    const names = screen.getAllByTestId("tip-name").map((n) => n.textContent);
+    expect(names).toEqual(["OpenRouter", "OpenAI"]); // gemini had 0 that day: left out
     expect(screen.getByText("Total")).toBeTruthy();
     expect(screen.getByText("23")).toBeTruthy();
   });

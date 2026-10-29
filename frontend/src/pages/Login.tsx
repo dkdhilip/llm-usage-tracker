@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
+import { USERNAME_PATTERN, USERNAME_RULES } from "../lib/validation";
 
 export function Login() {
   const { login, signup, authenticated, sessionExpired } = useAuth();
@@ -31,7 +32,7 @@ export function Login() {
 
   return (
     <div className="mx-auto max-w-md">
-      <Card title={mode === "signup" ? "Create an account" : "Sign in"}>
+      <Card title={mode === "signup" ? "Create an account" : "Sign in"} level={1}>
         <p className="mb-3 text-sm text-fg-muted">
           {mode === "signup"
             ? "Create an account, then start a workspace for your team or join one with an invite code."
@@ -51,8 +52,8 @@ export function Login() {
               required
               minLength={3}
               maxLength={32}
-              pattern="[A-Za-z0-9][A-Za-z0-9._-]{1,30}[A-Za-z0-9]"
-              title="3–32 characters: letters, digits, . _ - (must start and end with a letter or digit)"
+              pattern={USERNAME_PATTERN}
+              title={USERNAME_RULES}
               className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               value={username}
               onChange={(e) => setUsername(e.target.value)}

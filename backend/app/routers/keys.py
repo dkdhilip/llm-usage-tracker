@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -160,13 +160,14 @@ def list_keys(
     db: Session = Depends(get_db), m: Membership = Depends(require_membership)
 ) -> list[KeyOut]:
     rollup = {
-        row[0]: (row[1], int(row[2]), float(row[3]))
+        row[0]: (row[1], int(row[2]), float(row[3]), int(row[4]))
         for row in db.execute(
             select(
                 UsageLog.key_id,
                 func.count().label("requests"),
                 func.coalesce(func.sum(UsageLog.total_tokens), 0),
                 func.coalesce(func.sum(UsageLog.cost), 0),
+                func.coalesce(func.sum(case((UsageLog.cost.is_(None), 1), else_=0)), 0),
             ).group_by(UsageLog.key_id)
         ).all()
     }
@@ -181,7 +182,7 @@ def list_keys(
     )
     out: list[KeyOut] = []
     for k in keys:
-        requests, total_tokens, cost = rollup.get(k.id, (0, 0, 0.0))
+        requests, total_tokens, cost, unpriced = rollup.get(k.id, (0, 0, 0.0, 0))
         out.append(
             KeyOut(
                 id=k.id,
@@ -204,6 +205,7 @@ def list_keys(
                 requests=requests,
                 total_tokens=total_tokens,
                 cost=cost,
+                unpriced_requests=unpriced,
                 content_logging_enabled=k.content_logging_enabled,
                 image_logging_enabled=k.image_logging_enabled,
             )

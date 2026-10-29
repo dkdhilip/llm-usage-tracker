@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
 
@@ -34,63 +34,108 @@ function ThemeToggle() {
   );
 }
 
+/** The links this visitor can use: just "Sign in" before signing in, then "Get started" until they are in a
+ *  workspace, then the app pages (admins also get Requests, Playground and Workspace). */
+function useNavLinks(): { to: string; label: string }[] {
+  const { authenticated, inWorkspace, isWorkspaceAdmin } = useAuth();
+  if (!authenticated) return [{ to: "/login", label: "Sign in" }];
+  if (!inWorkspace) {
+    return [
+      { to: "/welcome", label: "Get started" },
+      { to: "/account", label: "Account" },
+    ];
+  }
+  return [
+    { to: "/dashboard", label: "Dashboard" },
+    ...(isWorkspaceAdmin
+      ? [
+          { to: "/requests", label: "Requests" },
+          { to: "/playground", label: "Playground" },
+          { to: "/workspace", label: "Workspace" },
+        ]
+      : []),
+    { to: "/account", label: "Account" },
+  ];
+}
+
+function MenuIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      {open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 6h16M4 12h16M4 18h16" />}
+    </svg>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }) {
-  const { authenticated, inWorkspace, isWorkspaceAdmin, workspace } = useAuth();
+  const { workspace } = useAuth();
+  const links = useNavLinks();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const { pathname } = useLocation();
+  // one link ("Sign in") always fits beside the logo; more than that collapse into a menu on a narrow screen
+  const collapses = links.length > 1;
+
+  useEffect(() => setMenuOpen(false), [pathname]); // going to a page closes the menu
+  useEffect(() => {
+    if (!menuOpen) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMenuOpen(false);
+      menuButton.current?.focus(); // keyboard users land back on the button that opened the menu
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [menuOpen]);
+
   return (
     <div className="flex min-h-full flex-col">
       <header className="border-b border-line bg-surface">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-6 w-6 rounded bg-brand-600" />
-            <span className="font-semibold text-fg">LLM Usage Tracker</span>
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-block h-6 w-6 shrink-0 rounded bg-brand-600" />
+            <span className="truncate font-semibold text-fg">LLM Usage Tracker</span>
             {workspace && (
-              <span className="rounded bg-fill px-1.5 py-0.5 text-xs text-fg-muted">
+              <span className="hidden max-w-[10rem] shrink-0 truncate rounded bg-fill px-1.5 py-0.5 text-xs text-fg-muted sm:inline-block">
                 {workspace.name}
               </span>
             )}
           </div>
-          <nav className="ml-auto flex items-center gap-1">
-            {!authenticated && (
-              <NavLink to="/login" className={navClass}>
-                Sign in
-              </NavLink>
-            )}
-            {authenticated && !inWorkspace && (
-              <NavLink to="/welcome" className={navClass}>
-                Get started
-              </NavLink>
-            )}
-            {authenticated && inWorkspace && (
-              <>
-                <NavLink to="/dashboard" className={navClass}>
-                  Dashboard
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <nav aria-label="Main" className={`items-center gap-1 ${collapses ? "hidden md:flex" : "flex"}`}>
+              {links.map((l) => (
+                <NavLink key={l.to} to={l.to} className={navClass}>
+                  {l.label}
                 </NavLink>
-                {isWorkspaceAdmin && (
-                  <>
-                    <NavLink to="/requests" className={navClass}>
-                      Requests
-                    </NavLink>
-                    <NavLink to="/playground" className={navClass}>
-                      Playground
-                    </NavLink>
-                    <NavLink to="/workspace" className={navClass}>
-                      Workspace
-                    </NavLink>
-                  </>
-                )}
-                <NavLink to="/account" className={navClass}>
-                  Account
-                </NavLink>
-              </>
-            )}
-            {authenticated && !inWorkspace && (
-              <NavLink to="/account" className={navClass}>
-                Account
-              </NavLink>
-            )}
+              ))}
+            </nav>
             <ThemeToggle />
-          </nav>
+            {collapses && (
+              <button
+                ref={menuButton}
+                type="button"
+                aria-label="Menu"
+                aria-expanded={menuOpen}
+                aria-controls="mobile-nav"
+                onClick={() => setMenuOpen((o) => !o)}
+                className="ml-1 rounded-md border border-line p-1.5 text-fg-muted hover:bg-fill md:hidden"
+              >
+                <MenuIcon open={menuOpen} />
+              </button>
+            )}
+          </div>
         </div>
+        {collapses && menuOpen && (
+          <nav id="mobile-nav" aria-label="Main menu" className="border-t border-line md:hidden">
+            <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-2">
+              {workspace && <div className="px-3 py-1 text-xs text-fg-muted">Workspace: {workspace.name}</div>}
+              {links.map((l) => (
+                <NavLink key={l.to} to={l.to} className={(s) => `${navClass(s)} block py-2.5`}>
+                  {l.label}
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>

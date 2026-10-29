@@ -148,7 +148,9 @@ describe("Workspace -> image storage", () => {
     render(<MemoryRouter><Workspace /></MemoryRouter>);
     await screen.findByText("Images off");
     expect(screen.getByTestId("image-logging").textContent).toContain("12.5 MB of 50 MB");
-    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");
+    const bar = screen.getByRole("progressbar", { name: "Image storage used" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("25");
+    expect(bar.getAttribute("aria-valuetext")).toMatch(/of/);
 
     await user.click(screen.getByRole("button", { name: "Turn on images" }));
     expect(confirm).toHaveBeenCalledTimes(1);

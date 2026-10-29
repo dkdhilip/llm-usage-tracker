@@ -17,6 +17,9 @@ _actual = func.coalesce(
 _estimated = func.coalesce(
     func.sum(case((UsageLog.cost_source != "provider", UsageLog.cost), else_=0)), 0
 )
+# Requests with no cost at all (NULL: the model has no price). The cost sums above count those as 0, so this is
+# what tells "no price yet" apart from a genuinely free request, whose cost is a real 0.
+_unpriced = func.coalesce(func.sum(case((UsageLog.cost.is_(None), 1), else_=0)), 0)
 
 
 def _apply_filters(
@@ -71,6 +74,7 @@ def usage_summary(
                     func.sum(case((UsageLog.status == "error", 1), else_=0)), 0
                 ),
                 func.coalesce(func.sum(UsageLog.latency_ms), 0),
+                _unpriced,
             ),
             start,
             end,
@@ -109,6 +113,7 @@ def usage_summary(
         "errors": errors,
         "tokens_per_sec": round(int(row[1]) / latency_sum_s, 1) if latency_sum_s else 0.0,
         "active_keys": active_keys or 0,
+        "unpriced_requests": int(row[11]),
     }
 
 
@@ -132,6 +137,7 @@ def usage_timeseries(
                 func.count().label("requests"),
                 func.coalesce(func.sum(UsageLog.total_tokens), 0),
                 func.coalesce(func.sum(UsageLog.cost), 0),
+                _unpriced,
             ),
             start,
             end,
@@ -148,6 +154,7 @@ def usage_timeseries(
             "requests": r[2],
             "total_tokens": int(r[3]),
             "cost": float(r[4]),
+            "unpriced_requests": int(r[5]),
         }
         for r in db.execute(stmt)
     ]
@@ -175,6 +182,7 @@ def usage_by_key(
                 func.coalesce(func.sum(UsageLog.total_tokens), 0),
                 func.coalesce(func.sum(UsageLog.cost), 0),
                 func.max(UsageLog.ts),
+                _unpriced,
             ),
             start,
             end,
@@ -197,6 +205,7 @@ def usage_by_key(
             "total_tokens": int(r[6]),
             "cost": float(r[7]),
             "last_used_at": r[8].isoformat() if r[8] else None,
+            "unpriced_requests": int(r[9]),
         }
         for r in db.execute(stmt)
     ]

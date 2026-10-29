@@ -1,6 +1,7 @@
 import type { ModelInfo } from "../lib/api";
 import type { KeyOption } from "../lib/keyOptions";
 import { KeyPicker } from "./KeyPicker";
+import { providerName } from "../lib/format";
 import {
   DEFAULT_RANGE_DAYS,
   RANGE_OPTIONS,
@@ -88,6 +89,7 @@ export function FilterBar({
       )}
 
       <select
+        aria-label="Provider"
         className={selectClass}
         value={filters.provider}
         onChange={(e) =>
@@ -97,12 +99,13 @@ export function FilterBar({
         <option value="">All providers</option>
         {providers.map((p) => (
           <option key={p} value={p}>
-            {p}
+            {providerName(p)}
           </option>
         ))}
       </select>
 
       <select
+        aria-label="Model"
         className={selectClass}
         value={filters.model}
         onChange={(e) => onChange({ ...filters, model: e.target.value })}
