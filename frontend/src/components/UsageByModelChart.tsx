@@ -1,39 +1,22 @@
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useState } from "react";
 import type { ByModelRow } from "../lib/api";
 import { Card } from "./Card";
+import { Button } from "./ui/Button";
 import { PanelPlaceholder, type PanelStatus } from "./ui/PanelState";
 import { providerColor } from "../lib/chartColors";
 import { providerName, tokens } from "../lib/format";
-import { chartTheme, useTheme } from "../lib/theme";
 
-const SUMMARY_MODELS = 8;
+/** How many models show before "Show all". */
+export const TOP_MODELS = 8;
 
-/** The bars in words: the models with the most tokens, largest first. */
-export function modelsSummary(rows: { name: string; tokens: number }[]): string {
-  if (rows.length === 0) return "No usage in this range yet.";
-  const top = rows.slice(0, SUMMARY_MODELS).map((r) => `${r.name} ${tokens(r.tokens)}`);
-  const more = rows.length - top.length;
-  return `Tokens by model, most first: ${top.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`;
-}
-
-const short = (s: string) => (s.length > 30 ? s.slice(0, 29) + "…" : s);
-
+/** The models with the most tokens as bars, largest first. The full name is always in the page (truncated by width,
+ *  with the whole name as a tooltip), and the provider is named in text as well as colour. */
 export function UsageByModelChart({ data, state = "ready" }: { data: ByModelRow[]; state?: PanelStatus }) {
-  const ct = chartTheme(useTheme().isDark);
-  const rows = [...data]
-    .sort((a, b) => b.total_tokens - a.total_tokens)
-    .map((r) => ({ name: r.model, tokens: r.total_tokens, provider: r.provider }));
+  const [all, setAll] = useState(false);
+  const rows = [...data].sort((a, b) => b.total_tokens - a.total_tokens);
+  const shown = all ? rows : rows.slice(0, TOP_MODELS);
+  const max = rows[0]?.total_tokens || 1;
   const providers = [...new Set(rows.map((r) => r.provider))];
-  const summary = modelsSummary(rows);
 
   if (state !== "ready") {
     return (
@@ -48,10 +31,10 @@ export function UsageByModelChart({ data, state = "ready" }: { data: ByModelRow[
       title="Tokens by model"
       right={
         providers.length > 0 ? (
-          <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+          <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui text-fg-muted" aria-label="Providers">
             {providers.map((p) => (
               <li key={p} className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full" style={{ background: providerColor(p) }} />
+                <span className="h-2 w-2 rounded-full" style={{ background: providerColor(p) }} aria-hidden="true" />
                 <span>{providerName(p)}</span>
               </li>
             ))}
@@ -59,55 +42,39 @@ export function UsageByModelChart({ data, state = "ready" }: { data: ByModelRow[
         ) : undefined
       }
     >
-      <div className="h-72 w-full" role={rows.length === 0 ? undefined : "img"} aria-label={rows.length === 0 ? undefined : summary}>
-        {rows.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-fg-subtle">
-            No usage in this range yet
-          </div>
-        ) : (
-          <div className="h-full w-full" aria-hidden="true">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              accessibilityLayer={false}
-              data={rows}
-              layout="vertical"
-              margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
-              barCategoryGap="28%"
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} horizontal={false} />
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11 }}
-                stroke={ct.axis}
-                tickLine={false}
-                tickFormatter={(v: number) => tokens(v)}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 11 }}
-                stroke={ct.axis}
-                tickLine={false}
-                tickFormatter={short}
-                width={190}
-              />
-              <Tooltip
-                cursor={{ fill: ct.grid, opacity: 0.5 }}
-                formatter={(v: number) => `${v.toLocaleString()} tokens`}
-                contentStyle={ct.tooltip.contentStyle}
-                labelStyle={ct.tooltip.labelStyle}
-                itemStyle={ct.tooltip.itemStyle}
-              />
-              <Bar dataKey="tokens" radius={[0, 6, 6, 0]} isAnimationActive={false}>
-                {rows.map((r) => (
-                  <Cell key={`${r.provider}/${r.name}`} fill={providerColor(r.provider)} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          </div>
-        )}
-      </div>
+      {rows.length === 0 ? (
+        <div className="flex h-40 items-center justify-center text-sm text-fg-subtle">No usage in this range yet</div>
+      ) : (
+        <>
+          <ul aria-label="Tokens by model, most first">
+            {shown.map((r) => (
+              <li
+                key={`${r.provider}/${r.model}`}
+                className="grid grid-cols-[7rem_1fr_3.5rem] items-center gap-3 py-1.5 text-ui sm:grid-cols-[12rem_1fr_3.5rem]"
+              >
+                <span className="min-w-0 truncate font-mono text-fg" title={`${r.model} (${providerName(r.provider)})`}>
+                  <span className="sr-only">{providerName(r.provider)}: </span>
+                  {r.model}
+                </span>
+                <span className="h-2 overflow-hidden rounded bg-fill" aria-hidden="true">
+                  <span
+                    className="block h-full rounded"
+                    style={{ width: `${Math.max((r.total_tokens / max) * 100, 1)}%`, background: providerColor(r.provider) }}
+                  />
+                </span>
+                <span className="text-right tabular-nums text-fg">{tokens(r.total_tokens)}</span>
+              </li>
+            ))}
+          </ul>
+          {rows.length > TOP_MODELS && (
+            <div className="mt-2">
+              <Button variant="ghost" size="sm" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+                {all ? "Show top 8" : `Show all ${rows.length} models`}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
     </Card>
   );
 }

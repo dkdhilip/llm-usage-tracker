@@ -8,13 +8,13 @@
     "default": 3,
     "login": 1,
     "welcome": 0,
-    "dashboard": 3,
+    "dashboard": 1,
     "requests": 0,
     "playground": 0,
     "workspace": 4,
     "account": 0,
-    "member-dashboard": 3,
-    "empty-dashboard": 3
+    "member-dashboard": 1,
+    "empty-dashboard": 1
   },
   "requiredChecks": [
     "keyboardTabStops",

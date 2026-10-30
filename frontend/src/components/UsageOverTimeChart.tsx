@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { TimeseriesPoint } from "../lib/api";
 import { Card } from "./Card";
 import { PanelPlaceholder, type PanelStatus } from "./ui/PanelState";
+import { SegmentedControl } from "./ui/SegmentedControl";
 import { providerColor } from "../lib/chartColors";
 import { costLabel, num, providerName, tokens, usd } from "../lib/format";
 import { chartTheme, useTheme } from "../lib/theme";
@@ -204,19 +205,7 @@ export function UsageOverTimeChart({ data, state = "ready" }: { data: Timeseries
     <Card
       title="Usage over time"
       right={
-        <div role="group" aria-label="Show" className="flex overflow-hidden rounded-md border border-line text-xs">
-          {METRICS.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              aria-pressed={metric === m.id}
-              onClick={() => setMetric(m.id)}
-              className={`px-2.5 py-1 ${metric === m.id ? "bg-brand-600 text-white" : "bg-surface text-fg-muted hover:bg-fill"}`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl label="Metric" options={METRICS.map((m) => ({ value: m.id, label: m.label }))} value={metric} onChange={setMetric} />
       }
     >
       {days === 0 ? (
@@ -225,7 +214,7 @@ export function UsageOverTimeChart({ data, state = "ready" }: { data: Timeseries
         <>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
             <div>
-              <div className="text-2xl font-semibold tabular-nums text-fg" data-testid="usage-total">
+              <div className="text-kpi font-semibold tabular-nums text-fg" data-testid="usage-total">
                 {formatMetric(metric, grand)}
               </div>
               <div className="text-xs text-fg-subtle">
