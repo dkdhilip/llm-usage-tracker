@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ui-audit": "node scripts/ui-audit/check.mjs",
+    "ui-audit:quick": "node scripts/ui-audit/check.mjs --quick"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -24,7 +26,9 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "axe-core": "^4.14.0",
     "jsdom": "^25.0.1",
+    "playwright-core": "^1.64.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",

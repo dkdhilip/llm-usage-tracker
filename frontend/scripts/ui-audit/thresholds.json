@@ -1,0 +1,19 @@
+{
+  "_comment": "Regression gate for scripts/ui-audit/check.mjs. Baseline measured on main at 5d6b6d0. Tighten these as phases land; never loosen them.",
+  "maxOverflowPx": 0,
+  "maxAxeViolationNodes": 25,
+  "maxUnnamedControls": 42,
+  "maxSmallTargets": {
+    "default": 3,
+    "login": 1,
+    "welcome": 0,
+    "dashboard": 3,
+    "requests": 0,
+    "playground": 0,
+    "workspace": 13,
+    "account": 1,
+    "member-dashboard": 3,
+    "empty-dashboard": 3
+  },
+  "requiredChecks": ["reflowAt320And640"]
+}
