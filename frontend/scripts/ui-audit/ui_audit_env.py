@@ -47,7 +47,9 @@ def up():
     down(quiet=True)
     WORK.mkdir(parents=True, exist_ok=True)
     print("building the frontend (out of tree)...")
-    subprocess.run(f'npx vite build --outDir "{WORK / "dist"}" --emptyOutDir', cwd=FRONTEND, shell=True, check=True, capture_output=True)
+    # VITE_STYLEGUIDE=1 also builds the /styleguide page (the design-system preview), which no other build contains
+    subprocess.run(f'npx vite build --outDir "{WORK / "dist"}" --emptyOutDir', cwd=FRONTEND, shell=True, check=True, capture_output=True,
+                   env=dict(os.environ, VITE_STYLEGUIDE="1"))
     target = WORK / "backend"
     if target.exists():
         shutil.rmtree(target)

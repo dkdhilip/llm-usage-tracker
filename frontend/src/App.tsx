@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./lib/auth";
@@ -9,6 +9,9 @@ import { Workspace } from "./pages/Workspace";
 import { Account } from "./pages/Account";
 import { Onboarding } from "./pages/Onboarding";
 import { Login } from "./pages/Login";
+
+// The design-system preview exists only in builds made with VITE_STYLEGUIDE=1; it is dropped from every other build.
+const StyleGuide = import.meta.env.VITE_STYLEGUIDE === "1" ? lazy(() => import("./pages/StyleGuide").then((m) => ({ default: m.StyleGuide }))) : null;
 
 function Loading() {
   return <div className="p-6 text-sm text-fg-subtle">Loading…</div>;
@@ -93,6 +96,16 @@ export default function App() {
             </RequireAuth>
           }
         />
+        {StyleGuide && (
+          <Route
+            path="/styleguide"
+            element={
+              <Suspense fallback={<Loading />}>
+                <StyleGuide />
+              </Suspense>
+            }
+          />
+        )}
         <Route path="/admin" element={<Navigate to="/workspace" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
