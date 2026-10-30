@@ -28,6 +28,8 @@
     "createKeyDrawer",
     "keysTableFitsDesktop",
     "workspaceAccessible",
+    "playgroundFlow",
+    "playgroundAccessible",
     "confirmDialogTrapAndReturn",
     "noNativeConfirmDialogs",
     "dashboardErrorAnnounced",

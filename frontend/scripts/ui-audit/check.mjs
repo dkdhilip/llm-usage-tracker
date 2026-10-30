@@ -279,6 +279,46 @@ await check("workspaceAccessible", async () => {
   return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views, 0 violations` };
 });
 
+await check("playgroundFlow", async () => {
+  // key -> verified -> Ctrl+Enter -> response with cost source -> copy -> "View in Requests" filtered to the key
+  const ctx = await context("auditadmin", 1440); await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const page = await ctx.newPage(); await load(page, "/playground");
+  const raw = creds.keys["prod-openai"].raw;
+  const warnFirst = await page.evaluate(() => { const n = document.querySelector('[role="note"]'); const b = [...document.querySelectorAll("button")].find((x) => /^Send request/.test(x.textContent)); return !!n && !!b && !!(n.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); });
+  const disabledAtFirst = await page.getByRole("button", { name: /^Send request/ }).getAttribute("aria-disabled");
+  await page.getByLabel("Virtual key", { exact: true }).fill(raw);
+  await page.getByText(/prod-openai · \d+ provider/).waitFor({ timeout: 6000 });
+  await page.getByLabel("Prompt").focus(); await page.keyboard.press("Control+Enter");
+  const box = page.getByRole("region", { name: "Response" }); await box.waitFor({ timeout: 10000 });
+  const facts = await box.evaluate((el) => ({ text: el.textContent, source: /Estimated|Actual charge|Your price|No price yet/.test(el.textContent) }));
+  await box.getByRole("button", { name: "Copy response" }).click(); await page.waitForTimeout(200);
+  const copied = await page.evaluate(() => navigator.clipboard.readText()); const copiedOk = copied.length > 0 && facts.text.includes(copied);
+  if (SHOTS) await page.screenshot({ path: join(OUT, "shots", "playground-response-1440-light.png"), fullPage: true });
+  const v = await axeRun(page);
+  await box.getByRole("link", { name: "View in Requests" }).click(); await page.waitForURL(/\/requests/, { timeout: 6000 }); await page.waitForTimeout(600);
+  const dest = await page.evaluate(() => ({ url: location.pathname + location.search, rows: [...document.querySelectorAll("tr[data-request-row]")].map((r) => r.children[1]?.textContent.replace("Content", "").trim()) }));
+  await ctx.close();
+  const filtered = /key_id=\d+/.test(dest.url) && dest.rows.length > 0 && dest.rows.every((x) => x === "prod-openai");
+  const axeNodes = v.reduce((a, x) => a + x.n, 0);
+  return { pass: warnFirst && disabledAtFirst === "true" && facts.source && copiedOk && filtered && axeNodes === 0, detail: JSON.stringify({ warningBeforeSend: warnFirst, sendInactiveUntilKey: disabledAtFirst === "true", costSourceShown: facts.source, copied: copiedOk, viewInRequests: dest.url, rowsAllThisKey: filtered, axe: axeNodes }) };
+});
+
+await check("playgroundAccessible", async () => {
+  // the form and a response, light and dark, desktop and phone
+  const out = {};
+  for (const [w, theme] of [[1440, "light"], [1440, "dark"], [390, "light"], [390, "dark"]]) {
+    const ctx = await context("auditadmin", w, theme); const page = await ctx.newPage(); await load(page, "/playground");
+    await page.getByLabel("Virtual key", { exact: true }).fill(creds.keys["prod-openai"].raw); await page.getByText(/prod-openai · \d+ provider/).waitFor({ timeout: 6000 });
+    await page.getByRole("button", { name: /^Send request/ }).click(); await page.getByRole("region", { name: "Response" }).waitFor({ timeout: 10000 });
+    if (SHOTS && w === 390) await page.screenshot({ path: join(OUT, "shots", `playground-response-${w}-${theme}.png`), fullPage: true });
+    const v = await axeRun(page); const m = await page.evaluate(MEASURE);
+    out[`${w}-${theme}`] = { axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), unnamed: m.unnamed, small: m.small, overflow: m.overflow };
+    await ctx.close();
+  }
+  const bad = Object.values(out).filter((x) => x.axe || x.unnamed || x.small || x.overflow > 0);
+  return { pass: bad.length === 0, detail: JSON.stringify(out) };
+});
+
 await check("noNativeConfirmDialogs", async () => {
   const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); const seen = [];
   page.on("dialog", async (d) => { seen.push(d.message().slice(0, 40)); await d.dismiss(); });
