@@ -3,6 +3,7 @@
   "maxOverflowPx": 0,
   "maxAxeViolationNodes": 25,
   "maxUnnamedControls": 42,
+  "minControlBorderContrast": 3,
   "maxSmallTargets": {
     "default": 3,
     "login": 1,

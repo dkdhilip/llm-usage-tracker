@@ -10,7 +10,7 @@ import {
 } from "../lib/filters";
 
 const selectClass =
-  "rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-fg focus:border-brand-500 focus:outline-none";
+  "rounded-md border border-control bg-surface px-2 py-1.5 text-sm text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text";
 
 export function FilterBar({
   filters,

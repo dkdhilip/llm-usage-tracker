@@ -47,7 +47,13 @@ const MEASURE = () => {
   let chars = 0, under12 = 0;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) { const t = walker.currentNode; const txt = t.textContent.trim(); const el = t.parentElement; if (!txt || !el || !vis(el) || el.closest("script,style")) continue; const px = parseFloat(getComputedStyle(el).fontSize); chars += txt.length; if (px < 12) under12 += txt.length; }
-  return { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, small: small.length, smallSamples: small.slice(0, 4).map((e) => `${nameOf(e).slice(0, 18)} ${Math.round(e.getBoundingClientRect().width)}x${Math.round(e.getBoundingClientRect().height)}`), unnamed: noName.length, unnamedSamples: noName.slice(0, 3).map((e) => e.outerHTML.slice(0, 90)), pctUnder12: chars ? Math.round((under12 / chars) * 100) : 0 };
+  // WCAG 1.4.11: the boundary of a text field / select must be 3:1 against what is behind it
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const rgb = (s) => { const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { c: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 }; };
+  const behind = (el) => { let e = el.parentElement; while (e) { const x = rgb(getComputedStyle(e).backgroundColor); if (x && x.a > 0.5) return x.c; e = e.parentElement; } return [255, 255, 255]; };
+  const ratios = [...document.querySelectorAll("input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea")].filter(vis).map((e) => { const cs = getComputedStyle(e); const b = rgb(cs.borderTopColor); if (!b || parseFloat(cs.borderTopWidth) === 0) return 0; const l1 = lum(b.c), l2 = lum(behind(e)); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); });
+  const minControlBorder = ratios.length ? Math.round(Math.min(...ratios) * 100) / 100 : null;
+  return { minControlBorder, overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, small: small.length, smallSamples: small.slice(0, 4).map((e) => `${nameOf(e).slice(0, 18)} ${Math.round(e.getBoundingClientRect().width)}x${Math.round(e.getBoundingClientRect().height)}`), unnamed: noName.length, unnamedSamples: noName.slice(0, 3).map((e) => e.outerHTML.slice(0, 90)), pctUnder12: chars ? Math.round((under12 / chars) * 100) : 0 };
 };
 const FOCUS_INFO = () => {
   const el = document.activeElement; if (!el || el === document.body) return null;
@@ -75,9 +81,10 @@ const PAGES = [
   { name: "account", user: "auditadmin", path: "/account" },
   { name: "member-dashboard", user: "samuel", path: "/dashboard", wait: ".recharts-wrapper" },
   { name: "empty-dashboard", user: "emptyadmin", path: "/dashboard" },
+  { name: "styleguide", user: null, path: "/styleguide", wait: "text=Design system" },
 ];
 const WIDTHS = QUICK ? [1440, 390] : [1440, 1024, 768, 390, 360];
-const DARK = new Set(["dashboard", "requests", "playground", "workspace"]);
+const DARK = new Set(["dashboard", "requests", "playground", "workspace", "styleguide"]);
 
 const results = { matrix: {}, checks: {} };
 // ================= matrix: overflow, axe, targets, names, small type
@@ -207,15 +214,18 @@ const rows = Object.entries(results.matrix);
 const fails = [];
 const worst = (f) => Math.max(0, ...rows.map(([, m]) => (m.error ? 0 : f(m))));
 const total = { overflow: worst((m) => m.overflow), axe: rows.reduce((a, [, m]) => a + (m.axe ? m.axe.reduce((x, v) => x + v.n, 0) : 0), 0), unnamed: rows.reduce((a, [, m]) => a + (m.unnamed || 0), 0) };
+const lowest = rows.filter(([, m]) => !m.error && m.minControlBorder != null).map(([k, m]) => [m.minControlBorder, k]).sort((a, b) => a[0] - b[0])[0];
 const smallBy = {}; for (const [k, m] of rows) if (!m.error && k.endsWith("|1440|light")) smallBy[k.split("|")[0]] = m.small;
 for (const [k, m] of rows) if (m.error) fails.push(`matrix ${k}: ${m.error}`);
 if (total.overflow > thresholds.maxOverflowPx) fails.push(`page overflow ${total.overflow}px > ${thresholds.maxOverflowPx}`);
 if (total.axe > thresholds.maxAxeViolationNodes) fails.push(`axe violation nodes ${total.axe} > ${thresholds.maxAxeViolationNodes}`);
 if (total.unnamed > thresholds.maxUnnamedControls) fails.push(`unnamed controls ${total.unnamed} > ${thresholds.maxUnnamedControls}`);
+if (lowest && lowest[0] < thresholds.minControlBorderContrast) fails.push(`field border contrast ${lowest[0]}:1 < ${thresholds.minControlBorderContrast}:1 (${lowest[1]})`);
 for (const [pg, n] of Object.entries(smallBy)) { const max = thresholds.maxSmallTargets[pg] ?? thresholds.maxSmallTargets.default; if (n > max) fails.push(`targets under 24px on ${pg}: ${n} > ${max}`); }
 for (const name of thresholds.requiredChecks) if (!results.checks[name]?.pass) fails.push(`check "${name}" must pass: ${results.checks[name]?.detail}`);
 
 console.log(`\nMATRIX (${rows.length} renders)  overflow max ${total.overflow}px | axe nodes ${total.axe} | unnamed controls ${total.unnamed}`);
+console.log("lowest text-field border contrast:", lowest ? `${lowest[0]}:1 on ${lowest[1]}` : "n/a");
 console.log("targets under 24px @1440 light:", JSON.stringify(smallBy));
 console.log("\nCHECKS");
 for (const [name, c] of Object.entries(results.checks)) console.log(`  ${c.pass ? "PASS" : "FAIL"}  ${name.padEnd(30)} ${c.detail}`);

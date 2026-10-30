@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens. Every colour role has a light and a dark value; text and control pairs meet WCAG 2.2 AA
+   (4.5:1 for text, 3:1 for control boundaries). Components use the roles, never raw hex values. */
 :root {
   color-scheme: light;
   --surface: 255 255 255; /* cards / panels */
@@ -11,7 +13,16 @@
   /* Secondary and tertiary text are at least 4.5:1 (WCAG AA) on the surface, page and chip fills. */
   --fg-muted: 82 95 114; /* secondary text */
   --fg-subtle: 100 111 128; /* tertiary text (4.6:1 on the chip fill, the tightest case) */
-  --line: 226 232 240; /* borders (slate-200) */
+  --line: 226 232 240; /* decorative borders: cards, table rules (slate-200) */
+  --control: 124 138 160; /* the boundary of a control (input, select, button): 3.5:1 on white, 3.2:1 on the chip fill */
+  --brand-text: 67 56 202; /* brand-coloured text and links (7.9:1 on white) */
+  /* Status roles: `fg` text on `soft` fill (>= 6.3:1), `line` for borders and bars. */
+  --success-fg: 22 101 52; --success-soft: 220 252 231; --success-line: 22 163 74;
+  --warning-fg: 146 64 14; --warning-soft: 254 243 199; --warning-line: 217 119 6;
+  --danger-fg: 153 27 27; --danger-soft: 254 226 226; --danger-line: 220 38 38;
+  --info-fg: 55 48 163; --info-soft: 224 231 255; --info-line: 99 102 241;
+  --brand-soft: 238 242 255; /* selected row, applied-filter chip */
+  --brand-soft-2: 224 231 255;
 }
 
 :root.dark {
@@ -23,6 +34,14 @@
   --fg-muted: 148 163 184; /* slate-400 */
   --fg-subtle: 130 144 166; /* 4.5:1 on the chip fill, the tightest case */
   --line: 30 41 59; /* slate-800 */
+  --control: 107 122 144; /* 4.1:1 on the surface, 3.4:1 on the chip fill */
+  --brand-text: 165 180 252; /* indigo-300: 9:1 on the surface */
+  --success-fg: 134 239 172; --success-soft: 18 51 50; --success-line: 34 197 94;
+  --warning-fg: 252 211 77; --warning-soft: 52 45 37; --warning-line: 245 158 11;
+  --danger-fg: 252 165 165; --danger-soft: 55 31 47; --danger-line: 248 113 113;
+  --info-fg: 199 210 254; --info-soft: 37 44 94; --info-line: 129 140 248;
+  --brand-soft: 28 36 74;
+  --brand-soft-2: 40 47 102;
 }
 
 /* Brand-coloured text (links, the sort that is active) is indigo-600, which is too dark on the dark surfaces
@@ -56,4 +75,18 @@ body {
   input[type="radio"] {
     accent-color: #6366f1; /* brand-500 */
   }
+}
+
+/* A form control's boundary must be visible (WCAG 1.4.11, 3:1). This sits outside @layer so it also wins over the
+   subtle `border-line` that older components still carry, and every field shows a focus ring (2.4.7). */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+textarea:not([hidden]),
+select:not([hidden]) {
+  border-color: rgb(var(--control));
+}
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea:not([hidden]):focus-visible,
+select:not([hidden]):focus-visible {
+  outline: 2px solid rgb(var(--brand-text));
+  outline-offset: 1px;
 }

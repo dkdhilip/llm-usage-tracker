@@ -3,7 +3,7 @@
 export const PROVIDER_COLORS: Record<string, string> = {
   openai: "#10a37f",
   anthropic: "#d97757",
-  openrouter: "#6366f1",
+  openrouter: "#c026d3", // not the brand indigo: indigo and Gemini blue were nearly indistinguishable for deuteranopia
   gemini: "#3b82f6",
 };
 
