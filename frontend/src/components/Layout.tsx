@@ -3,6 +3,18 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
 
+const APP_NAME = "LLM Usage Tracker";
+const PAGE_TITLES: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/requests": "Requests",
+  "/playground": "Playground",
+  "/workspace": "Workspace",
+  "/account": "Account",
+  "/login": "Sign in",
+  "/welcome": "Get started",
+  "/styleguide": "Design system",
+};
+
 const linkBase = "px-3 py-1.5 rounded-md text-sm font-medium transition-colors";
 
 function navClass({ isActive }: { isActive: boolean }): string {
@@ -76,6 +88,22 @@ export function Layout({ children }: { children: ReactNode }) {
   const collapses = links.length > 1;
 
   useEffect(() => setMenuOpen(false), [pathname]); // going to a page closes the menu
+
+  // Every page has its own title (shown in the tab and read by a screen reader), and a route change is announced and
+  // moves focus to the page, as a full page load would. The first render is left alone: the browser already did it.
+  const pageTitle = PAGE_TITLES[pathname];
+  const main = useRef<HTMLElement>(null);
+  const firstRoute = useRef(true);
+  const [announcement, setAnnouncement] = useState("");
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} · ${APP_NAME}` : APP_NAME;
+    if (firstRoute.current) {
+      firstRoute.current = false;
+      return;
+    }
+    setAnnouncement(pageTitle ?? APP_NAME);
+    main.current?.focus({ preventScroll: true });
+  }, [pathname, pageTitle]);
   useEffect(() => {
     if (!menuOpen) return;
     const esc = (e: KeyboardEvent) => {
@@ -89,6 +117,15 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-full flex-col">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:border focus:border-control focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-fg focus:shadow-md"
+      >
+        Skip to main content
+      </a>
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -138,7 +175,9 @@ export function Layout({ children }: { children: ReactNode }) {
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
+      <main id="main" ref={main} tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 focus:outline-none">
+        {children}
+      </main>
     </div>
   );
 }

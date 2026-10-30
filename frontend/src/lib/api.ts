@@ -33,18 +33,47 @@ function isCsrfRejection(status: number, detail: unknown): boolean {
   return status === 403 && typeof detail === "string" && detail.startsWith("CSRF token");
 }
 
+/** The server answered with an error status. `status` lets a caller tell "signed out" (401) from "broken" (5xx). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** The request never got an answer (offline, DNS, the server is down). Not the same as being signed out. */
+export class NetworkError extends Error {
+  constructor() {
+    super("Can't reach the server. Check your connection and try again.");
+    this.name = "NetworkError";
+  }
+}
+
+/** True when a failure means "the server is unreachable or broken", not "you are signed out" or "bad request". */
+export function isConnectionProblem(e: unknown): boolean {
+  return e instanceof NetworkError || (e instanceof ApiError && e.status >= 500);
+}
+
 async function req<T>(path: string, init: RequestInit = {}, retriedAfterCsrf = false): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const token = SAFE_METHODS.has(method) ? null : csrfToken();
-  const res = await fetch(BASE + path, {
-    ...init,
-    credentials: "include", // carry the session cookie
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "X-CSRF-Token": token } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, {
+      ...init,
+      credentials: "include", // carry the session cookie
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "X-CSRF-Token": token } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new NetworkError();
+  }
   if (!res.ok) {
     let detail: unknown = res.statusText;
     try {
@@ -64,7 +93,7 @@ async function req<T>(path: string, init: RequestInit = {}, retriedAfterCsrf = f
         sessionExpiredHandler?.();
       }
     }
-    throw new Error(friendlyDetail(detail));
+    throw new ApiError(friendlyDetail(detail), res.status);
   }
   return (await res.json()) as T;
 }

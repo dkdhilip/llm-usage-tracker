@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { ByModelRow } from "../lib/api";
 import { Card } from "./Card";
+import { PanelPlaceholder, type PanelStatus } from "./ui/PanelState";
 import { providerColor, shareLabel } from "../lib/chartColors";
 import { providerName, tokens } from "../lib/format";
 import { chartTheme, useTheme } from "../lib/theme";
@@ -16,7 +17,7 @@ export function providerShareSummary(slices: { provider: string; value: number }
   );
 }
 
-export function UsageByProviderChart({ data }: { data: ByModelRow[] }) {
+export function UsageByProviderChart({ data, state = "ready" }: { data: ByModelRow[]; state?: PanelStatus }) {
   const ct = chartTheme(useTheme().isDark);
   const slices = useMemo(() => {
     const byProvider = new Map<string, number>();
@@ -31,6 +32,14 @@ export function UsageByProviderChart({ data }: { data: ByModelRow[] }) {
 
   const total = slices.reduce((a, s) => a + s.value, 0);
   const summary = providerShareSummary(slices, total);
+
+  if (state !== "ready") {
+    return (
+      <Card title="Usage by provider">
+        <PanelPlaceholder state={state} className="h-56" />
+      </Card>
+    );
+  }
 
   return (
     <Card title="Usage by provider">

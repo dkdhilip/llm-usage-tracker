@@ -5,13 +5,16 @@ import { num, relTime, tokens } from "../lib/format";
 import { CostCell } from "./CostCell";
 import { DEFAULT_KEY_STATUSES, type KeyStatus } from "../lib/keyOptions";
 import { KeyStatusFilter } from "./KeyStatusFilter";
+import { PanelPlaceholder, type PanelStatus } from "./ui/PanelState";
 
 type SortKey = "cost" | "total_tokens" | "requests";
 
 export function KeyUsageTable({
   rows,
   statusOf,
+  state = "ready",
 }: {
+  state?: PanelStatus;
   rows: ByKeyRow[];
   /** a key's status; the Dashboard passes "active" for a key it does not know */
   statusOf: (keyId: number) => KeyStatus;
@@ -20,6 +23,14 @@ export function KeyUsageTable({
   const [statuses, setStatuses] = useState<KeyStatus[]>(DEFAULT_KEY_STATUSES);
   const shown = rows.filter((r) => statuses.includes(statusOf(r.key_id)));
   const sorted = [...shown].sort((a, b) => b[sort] - a[sort]);
+
+  if (state !== "ready") {
+    return (
+      <Card title="Per-key usage">
+        <PanelPlaceholder state={state} className="h-40" />
+      </Card>
+    );
+  }
 
   const header = (key: SortKey, label: string) => (
     <button

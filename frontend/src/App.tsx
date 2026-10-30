@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./lib/auth";
@@ -9,12 +9,43 @@ import { Workspace } from "./pages/Workspace";
 import { Account } from "./pages/Account";
 import { Onboarding } from "./pages/Onboarding";
 import { Login } from "./pages/Login";
+import { Button } from "./components/ui/Button";
+import { InlineAlert } from "./components/ui/InlineAlert";
 
 // The design-system preview exists only in builds made with VITE_STYLEGUIDE=1; it is dropped from every other build.
 const StyleGuide = import.meta.env.VITE_STYLEGUIDE === "1" ? lazy(() => import("./pages/StyleGuide").then((m) => ({ default: m.StyleGuide }))) : null;
 
 function Loading() {
   return <div className="p-6 text-sm text-fg-subtle">Loading…</div>;
+}
+
+/** Shown when the session could not be checked because the server is unreachable or failing. The visitor is not
+ *  asked to sign in (they may well be signed in); they can retry. */
+function ConnectionProblem() {
+  const { refresh } = useAuth();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="mx-auto max-w-md pt-10">
+      <InlineAlert
+        tone="error"
+        title="Can't reach the server"
+        action={
+          <Button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await refresh();
+              setBusy(false);
+            }}
+          >
+            {busy ? "Retrying…" : "Retry"}
+          </Button>
+        }
+      >
+        Check your connection. You have not been signed out; try again in a moment.
+      </InlineAlert>
+    </div>
+  );
 }
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -37,8 +68,12 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  const { connectionError, authenticated } = useAuth();
   return (
     <Layout>
+      {connectionError && !authenticated ? (
+        <ConnectionProblem />
+      ) : (
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<Login />} />
@@ -109,6 +144,7 @@ export default function App() {
         <Route path="/admin" element={<Navigate to="/workspace" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      )}
     </Layout>
   );
 }

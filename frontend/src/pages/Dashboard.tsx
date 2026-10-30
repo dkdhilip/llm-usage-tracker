@@ -11,6 +11,9 @@ import { useAuth } from "../lib/auth";
 import { keyOptions, type KeyOption } from "../lib/keyOptions";
 import { defaultFilters, toQuery, type Filters } from "../lib/filters";
 import { FilterBar } from "../components/FilterBar";
+import { Button } from "../components/ui/Button";
+import { InlineAlert } from "../components/ui/InlineAlert";
+import type { PanelStatus } from "../components/ui/PanelState";
 import { SummaryCards } from "../components/SummaryCards";
 import { UsageOverTimeChart } from "../components/UsageOverTimeChart";
 import { UsageByProviderChart } from "../components/UsageByProviderChart";
@@ -67,6 +70,10 @@ export function Dashboard() {
 
   const statusById = useMemo(() => new Map(allKeys.map((k) => [k.key_id, k.status])), [allKeys]);
 
+  // A panel is only "loading" until its first data arrives (a later reload keeps showing what it has), and a
+  // failed load says so: it never shows "No usage", which would mean "loaded, and there is none".
+  const state: PanelStatus = error ? "error" : loading && !summary ? "loading" : "ready";
+
   const scopeLabel = isWorkspaceAdmin
     ? `workspace: ${workspace?.name ?? ""}`
     : "your assigned keys";
@@ -91,21 +98,29 @@ export function Dashboard() {
       <FilterBar filters={filters} onChange={setFilters} models={models} keys={allKeys} />
 
       {error && (
-        <div className="rounded-md border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+        <InlineAlert
+          tone="error"
+          title="Couldn't load usage"
+          action={
+            <Button size="sm" onClick={load}>
+              Retry
+            </Button>
+          }
+        >
           {error}
-        </div>
+        </InlineAlert>
       )}
 
-      <SummaryCards data={summary} loading={loading} />
+      <SummaryCards data={error ? null : summary} loading={loading} error={!!error} />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <UsageOverTimeChart data={timeseries} />
-        <UsageByProviderChart data={byModel} />
+        <UsageOverTimeChart data={timeseries} state={state} />
+        <UsageByProviderChart data={byModel} state={state} />
       </div>
 
-      <UsageByModelChart data={byModel} />
+      <UsageByModelChart data={byModel} state={state} />
 
-      <KeyUsageTable rows={byKey} statusOf={(id) => statusById.get(id) ?? "active"} />
+      <KeyUsageTable rows={byKey} statusOf={(id) => statusById.get(id) ?? "active"} state={state} />
     </div>
   );
 }
