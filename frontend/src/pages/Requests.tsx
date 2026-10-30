@@ -12,6 +12,7 @@ import {
 import { Card } from "../components/Card";
 import { costSourceLabel, providerName, relTime, usd } from "../lib/format";
 import { Button } from "../components/ui/Button";
+import { Combobox } from "../components/ui/Combobox";
 import { Dialog, DialogContent } from "../components/ui/Dialog";
 import { InlineAlert } from "../components/ui/InlineAlert";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -169,18 +170,15 @@ export function Requests() {
           </select>
         </Field>
         <Field label="Model">
-          <select
-            className="rounded border border-line bg-surface px-2 py-1 text-xs"
+          <Combobox
+            label="Model"
             value={params.get("model") ?? ""}
-            onChange={(e) => setFilter("model", e.target.value)}
-          >
-            <option value="">All</option>
-            {modelOptions.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            onChange={(m) => setFilter("model", m)}
+            options={modelOptions.map((m) => ({ value: m, label: m }))}
+            allLabel="All models"
+            searchPlaceholder="Search models…"
+            className="h-7 text-xs"
+          />
         </Field>
         <Field label="Status">
           <select
@@ -212,7 +210,7 @@ export function Requests() {
         {hasFilters && (
           <button
             onClick={() => navigate("/requests")}
-            className="ml-auto self-center text-brand-600 hover:underline"
+            className="ml-auto self-center text-brand-600 hover:underline inline-flex min-h-7 items-center"
           >
             Clear all
           </button>

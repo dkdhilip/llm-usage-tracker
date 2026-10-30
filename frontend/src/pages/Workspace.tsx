@@ -68,13 +68,15 @@ function ProviderRow({
                   saved ····{p.last4}
                 </span>
                 <button
-                  className="text-[11px] text-brand-600 hover:underline"
+                  aria-label={`Replace ${providerName(p.provider)} key`}
+                  className="text-[11px] text-brand-600 hover:underline inline-flex min-h-7 items-center"
                   onClick={() => setEditing(true)}
                 >
                   replace
                 </button>
                 <button
-                  className="text-[11px] text-red-600 hover:underline disabled:opacity-50"
+                  aria-label={`Clear ${providerName(p.provider)} key`}
+                  className="text-[11px] text-danger-fg hover:underline disabled:opacity-50 inline-flex min-h-7 items-center"
                   disabled={busy !== null}
                   onClick={() => run("key", () => api.clearWorkspaceProviderKey(p.provider))}
                 >
@@ -87,12 +89,14 @@ function ProviderRow({
                 <input
                   type="password"
                   placeholder={`paste ${p.provider} key`}
-                  className="w-40 rounded border border-line px-1.5 py-0.5 text-[11px]"
+                  aria-label={`${providerName(p.provider)} API key`}
+                  className="w-40 rounded border border-line px-1.5 py-1 min-h-7 text-[11px]"
                   value={val}
                   onChange={(e) => setVal(e.target.value)}
                 />
                 <button
-                  className="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                  aria-label={`Save ${providerName(p.provider)} key`}
+                  className="rounded bg-brand-600 px-2 py-1 min-h-7 text-[10px] font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                   disabled={busy !== null || val.trim().length < 8}
                   onClick={() =>
                     run("key", async () => {
@@ -106,7 +110,7 @@ function ProviderRow({
                 </button>
                 {p.source === "workspace" && (
                   <button
-                    className="text-[11px] text-fg-subtle hover:underline"
+                    className="text-[11px] text-fg-subtle hover:underline inline-flex min-h-7 items-center"
                     onClick={() => setEditing(false)}
                   >
                     cancel
@@ -140,7 +144,8 @@ function ProviderRow({
               type="number"
               min="0"
               step="1"
-              className="w-24 rounded-md border border-line px-2 py-0.5 text-[11px]"
+              aria-label={`Monthly cap for ${providerName(p.provider)} in US dollars`}
+              className="w-24 rounded-md border border-line px-2 py-1 min-h-7 text-[11px]"
               placeholder={
                 p.monthly_cap_usd != null ? String(p.monthly_cap_usd) : `${defaultCap} (default)`
               }
@@ -148,7 +153,8 @@ function ProviderRow({
               onChange={(e) => setCap(e.target.value)}
             />
             <button
-              className="rounded-md border border-line px-2 py-0.5 text-[11px] text-fg-muted hover:bg-fill disabled:opacity-50"
+              aria-label={`Set monthly cap for ${providerName(p.provider)}`}
+              className="rounded-md border border-line px-2.5 py-1 min-h-7 text-[11px] text-fg-muted hover:bg-fill disabled:opacity-50"
               disabled={busy !== null || cap.trim() === ""}
               onClick={() =>
                 run("cap", async () => {
@@ -161,7 +167,7 @@ function ProviderRow({
             </button>
             {p.monthly_cap_usd != null && (
               <button
-                className="text-[11px] text-brand-600 hover:underline disabled:opacity-50"
+                className="text-[11px] text-brand-600 hover:underline disabled:opacity-50 inline-flex min-h-7 items-center"
                 disabled={busy !== null}
                 onClick={() => run("cap", () => api.setWorkspaceProviderCap(p.provider, null))}
               >
@@ -272,7 +278,7 @@ function MembersCard({
                           if (ok) void run("rm" + m.user_id, () => api.removeMember(m.user_id));
                         }}
                         disabled={busy !== null}
-                        className="rounded border border-line px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                        className="rounded border border-line px-2 py-1 min-h-7 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10"
                       >
                         Remove
                       </button>
@@ -291,6 +297,7 @@ function MembersCard({
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="flex-1 rounded-md border border-line px-2 py-1.5 text-sm"
+              aria-label="Invite label (optional)"
               placeholder="label (optional) — e.g. Jane"
               maxLength={80}
               value={label}
@@ -345,7 +352,7 @@ function MembersCard({
                   <button
                     onClick={() => void run("rev" + inv.id, () => api.revokeInvite(inv.id))}
                     disabled={busy !== null}
-                    className="ml-auto text-brand-600 hover:underline disabled:opacity-50"
+                    className="ml-auto text-brand-600 hover:underline disabled:opacity-50 inline-flex min-h-7 items-center"
                   >
                     revoke
                   </button>
@@ -445,6 +452,7 @@ function CreateKeyForm({
       <div className="space-y-3">
         <input
           className="w-full rounded-md border border-line px-3 py-2 text-sm"
+          aria-label="Key label"
           placeholder="Label — e.g. Jane (Data Science) or Support Bot"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
@@ -1173,7 +1181,7 @@ export function Workspace() {
             void logout();
             setKeys([]);
           }}
-          className="text-sm text-fg-muted hover:underline"
+          className="text-sm text-fg-muted hover:underline inline-flex min-h-7 items-center"
         >
           Sign out
         </button>
@@ -1215,7 +1223,7 @@ export function Workspace() {
               type="button"
               onClick={toggleRevoked}
               aria-pressed={showRevoked}
-              className="text-xs text-brand-600 hover:underline"
+              className="text-xs text-brand-600 hover:underline inline-flex min-h-7 items-center"
             >
               {showRevoked ? `Hide revoked keys (${revokedCount})` : `Show revoked keys (${revokedCount})`}
             </button>
@@ -1424,7 +1432,7 @@ export function Workspace() {
               type="button"
               onClick={() => setShowDeleted((v) => !v)}
               aria-expanded={showDeleted}
-              className="text-xs text-brand-600 hover:underline"
+              className="text-xs text-brand-600 hover:underline inline-flex min-h-7 items-center"
             >
               {showDeleted ? "Hide deleted keys" : "Show deleted keys"}
             </button>

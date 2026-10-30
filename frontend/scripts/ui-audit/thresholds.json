@@ -1,8 +1,8 @@
 {
-  "_comment": "Regression gate for scripts/ui-audit/check.mjs. Baseline measured on main at 5d6b6d0. Tighten these as phases land; never loosen them.",
+  "_comment": "Regression gate for scripts/ui-audit/check.mjs. Baseline measured on main at 5d6b6d0, tightened after phase 2. Tighten these as phases land; never loosen them.",
   "maxOverflowPx": 0,
-  "maxAxeViolationNodes": 25,
-  "maxUnnamedControls": 42,
+  "maxAxeViolationNodes": 0,
+  "maxUnnamedControls": 0,
   "minControlBorderContrast": 3,
   "maxSmallTargets": {
     "default": 3,
@@ -11,10 +11,23 @@
     "dashboard": 3,
     "requests": 0,
     "playground": 0,
-    "workspace": 13,
-    "account": 1,
+    "workspace": 4,
+    "account": 0,
     "member-dashboard": 3,
     "empty-dashboard": 3
   },
-  "requiredChecks": ["reflowAt320And640"]
+  "requiredChecks": [
+    "keyboardTabStops",
+    "requestsRowOpensByKeyboard",
+    "requestInspectorSemantics",
+    "confirmDialogTrapAndReturn",
+    "noNativeConfirmDialogs",
+    "dashboardErrorAnnounced",
+    "dashboardLoadingIsNotEmpty",
+    "networkFailureIsNotSignedOut",
+    "routeTitlesAndSkipLink",
+    "reducedMotion",
+    "comboboxKeyboard",
+    "reflowAt320And640"
+  ]
 }

@@ -41,7 +41,7 @@ function CopyButton({ text }: { text: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="rounded border border-line px-2 py-0.5 text-[11px] text-fg-muted hover:bg-fill"
+      className="rounded border border-line px-2 py-1 min-h-7 text-[11px] text-fg-muted hover:bg-fill"
     >
       {copied ? "Copied" : "Copy"}
     </button>
@@ -78,7 +78,7 @@ export function ConnectPanel({
   if (full) {
     return (
       <div className="space-y-2">
-        <button type="button" onClick={() => setFull(false)} className="text-xs text-brand-600 hover:underline">
+        <button type="button" onClick={() => setFull(false)} className="text-xs text-brand-600 hover:underline inline-flex min-h-7 items-center">
           ← Back to the short version
         </button>
         <IntegrationGuide keyInfo={keyInfo} configuredProviders={configuredProviders} />
@@ -144,7 +144,7 @@ export function ConnectPanel({
 
       <p className="text-xs text-fg-subtle">
         The virtual key is shown only once, when it is created. Never put a real provider key in your app.{" "}
-        <button type="button" onClick={() => setFull(true)} className="text-brand-600 hover:underline">
+        <button type="button" onClick={() => setFull(true)} className="text-brand-600 hover:underline inline-flex min-h-7 items-center">
           Show full setup guide
         </button>
       </p>

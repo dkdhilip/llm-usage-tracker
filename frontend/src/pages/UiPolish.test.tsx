@@ -109,7 +109,7 @@ describe("Workspace provider keys", () => {
     await screen.findByText("saved ····1234");
     expect(screen.queryByPlaceholderText("paste openai key")).toBeNull(); // a saved key: no entry field yet
 
-    await user.click(screen.getByRole("button", { name: "clear" }));
+    await user.click(screen.getByRole("button", { name: /^Clear .+ key$/ }));
     await waitFor(() => expect(api.clearWorkspaceProviderKey).toHaveBeenCalledWith("openai"));
     const input = await screen.findByPlaceholderText("paste openai key"); // back, with no reload
     expect(input).toBeTruthy();
@@ -130,7 +130,7 @@ describe("Workspace provider keys", () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Workspace /></MemoryRouter>);
     await screen.findByText("saved ····1234");
-    await user.click(screen.getByRole("button", { name: "replace" }));
+    await user.click(screen.getByRole("button", { name: /^Replace .+ key$/ }));
     expect(screen.getByPlaceholderText("paste openai key")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "cancel" }));
     expect(screen.queryByPlaceholderText("paste openai key")).toBeNull();
