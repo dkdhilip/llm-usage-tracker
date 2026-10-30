@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
+import { IconButton } from "./ui/Button";
+import { Logo } from "./ui/Logo";
 
 const APP_NAME = "LLM Usage Tracker";
 const PAGE_TITLES: Record<string, string> = {
@@ -26,23 +28,18 @@ function navClass({ isActive }: { isActive: boolean }): string {
 function ThemeToggle() {
   const { isDark, toggle } = useTheme();
   return (
-    <button
-      onClick={toggle}
-      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      aria-label="Toggle theme"
-      className="ml-1 rounded-md border border-line p-1.5 text-fg-muted hover:bg-fill"
-    >
+    <IconButton label="Toggle theme" title={isDark ? "Switch to light mode" : "Switch to dark mode"} variant="secondary" className="ml-1" onClick={toggle}>
       {isDark ? (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
         </svg>
       ) : (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
         </svg>
       )}
-    </button>
+    </IconButton>
   );
 }
 
@@ -129,8 +126,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-block h-6 w-6 shrink-0 rounded bg-brand-600" />
-            <span className="truncate font-semibold text-fg">LLM Usage Tracker</span>
+            <Logo />
+            <span className="truncate font-semibold text-fg">{APP_NAME}</span>
             {workspace && (
               <span className="hidden max-w-[10rem] shrink-0 truncate rounded bg-fill px-1.5 py-0.5 text-xs text-fg-muted sm:inline-block">
                 {workspace.name}
@@ -147,17 +144,18 @@ export function Layout({ children }: { children: ReactNode }) {
             </nav>
             <ThemeToggle />
             {collapses && (
-              <button
+              <IconButton
                 ref={menuButton}
-                type="button"
-                aria-label="Menu"
+                label="Menu"
+                title={menuOpen ? "Close menu" : "Open menu"}
+                variant="secondary"
                 aria-expanded={menuOpen}
                 aria-controls="mobile-nav"
                 onClick={() => setMenuOpen((o) => !o)}
-                className="ml-1 rounded-md border border-line p-1.5 text-fg-muted hover:bg-fill md:hidden"
+                className="ml-1 md:hidden"
               >
                 <MenuIcon open={menuOpen} />
-              </button>
+              </IconButton>
             )}
           </div>
         </div>

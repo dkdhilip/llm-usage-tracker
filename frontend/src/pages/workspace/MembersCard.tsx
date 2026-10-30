@@ -1,8 +1,16 @@
 import { useState } from "react";
 import { api, type WorkspaceDetail } from "../../lib/api";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/Card";
+import { Input } from "../../components/ui/Field";
+import { InlineAlert } from "../../components/ui/InlineAlert";
+import { ScrollRegion } from "../../components/ui/ScrollRegion";
 import { useConfirmDialog } from "../../components/ui/useConfirmDialog";
 import { num } from "../../lib/format";
+import { SecretBox } from "./SecretBox";
+
+const TH = "py-2 pr-3 text-left text-meta font-medium uppercase tracking-wide text-fg-muted";
 
 // ---------- members + invites ----------
 export function MembersCard({
@@ -37,16 +45,16 @@ export function MembersCard({
   return (
     <Card title={`Members (${members.length})`}>
       {dialog}
-      <div className="space-y-3">
-        <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Members table">
+      <div className="space-y-5">
+        <ScrollRegion label="Members table">
           <table className="w-full min-w-[28rem] text-sm">
             <thead>
-              <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-subtle">
-                <th className="py-1.5 pr-3">User</th>
-                <th className="py-1.5 pr-3">Role</th>
-                <th className="py-1.5 pr-3 text-right">Keys</th>
-                <th className="py-1.5 pr-3 text-right">Requests</th>
-                <th className="py-1.5 pr-0">
+              <tr className="border-b border-line">
+                <th scope="col" className={TH}>User</th>
+                <th scope="col" className={TH}>Role</th>
+                <th scope="col" className={`${TH} text-right`}>Keys</th>
+                <th scope="col" className={`${TH} text-right`}>Requests</th>
+                <th scope="col" className={`${TH} pr-0`}>
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -54,15 +62,21 @@ export function MembersCard({
             <tbody>
               {members.map((m) => (
                 <tr key={m.user_id} className="border-b border-line last:border-0">
-                  <td className="py-1.5 pr-3 font-medium">{m.username}</td>
-                  <td className="py-1.5 pr-3 text-xs text-fg-muted">
-                    {m.role === "admin" ? "Workspace Admin" : "Team Member"}
+                  <td className="py-2.5 pr-3 font-medium text-fg">{m.username}</td>
+                  <td className="py-2.5 pr-3">
+                    <Badge variant={m.role === "admin" ? "brand" : "neutral"}>
+                      {m.role === "admin" ? "Workspace Admin" : "Team Member"}
+                    </Badge>
                   </td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{m.assigned_keys}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{num(m.requests)}</td>
-                  <td className="py-1.5 pr-0 text-right">
+                  <td className="py-2.5 pr-3 text-right tabular-nums">{m.assigned_keys}</td>
+                  <td className="py-2.5 pr-3 text-right tabular-nums">{num(m.requests)}</td>
+                  <td className="py-2.5 pr-0 text-right">
                     {m.role === "member" && (
-                      <button
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        aria-label={`Remove ${m.username}`}
+                        disabled={busy !== null}
                         onClick={async () => {
                           const ok = await confirm({
                             title: `Remove ${m.username}?`,
@@ -72,33 +86,31 @@ export function MembersCard({
                           });
                           if (ok) void run("rm" + m.user_id, () => api.removeMember(m.user_id));
                         }}
-                        disabled={busy !== null}
-                        className="rounded border border-line px-2 py-1 min-h-7 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10"
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
 
-        <div className="border-t border-line pt-3">
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">
-            Invite a Team Member
-          </div>
+        <div className="border-t border-line pt-4">
+          <h3 className="mb-2 text-meta font-semibold uppercase tracking-wider text-fg-muted">Invite a Team Member</h3>
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              className="flex-1 rounded-md border border-line px-2 py-1.5 text-sm"
+            <Input
+              className="min-w-0 flex-1"
               aria-label="Invite label (optional)"
               placeholder="label (optional) — e.g. Jane"
               maxLength={80}
               value={label}
               onChange={(e) => setLabel(e.target.value)}
             />
-            <button
+            <Button
+              variant="primary"
+              disabled={busy !== null}
               onClick={() =>
                 void run("mint", async () => {
                   const inv = await api.createInvite(label);
@@ -106,57 +118,40 @@ export function MembersCard({
                   setLabel("");
                 })
               }
-              disabled={busy !== null}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               Generate invite
-            </button>
+            </Button>
           </div>
 
           {minted && (
-            <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs dark:border-emerald-500/30 dark:bg-emerald-500/10">
-              <div className="font-medium text-emerald-800 dark:text-emerald-300">
-                Send this code to {minted.label ?? "your Team Member"} — it works once.
-              </div>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 break-all rounded bg-surface px-2 py-1 font-mono">
-                  {minted.code}
-                </code>
-                <button
-                  onClick={() => navigator.clipboard?.writeText(minted.code)}
-                  className="rounded bg-emerald-600 px-2 py-1 font-medium text-white hover:bg-emerald-700"
-                >
-                  Copy
-                </button>
-              </div>
+            <div className="mt-3">
+              <SecretBox title={`Send this code to ${minted.label ?? "your Team Member"} — it works once.`} value={minted.code} what="Invite code" />
             </div>
           )}
 
           {invites.length > 0 && (
-            <ul className="mt-2 space-y-1 text-xs">
+            <ul className="mt-3 space-y-1.5 text-ui">
               {invites.map((inv) => (
-                <li
-                  key={inv.id}
-                  className="flex items-center gap-2 rounded bg-fill px-2 py-1"
-                >
+                <li key={inv.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-fill px-3 py-1.5">
                   <code className="font-mono">{inv.code}</code>
                   {inv.label && <span className="text-fg-muted">· {inv.label}</span>}
-                  <span className="text-fg-subtle">
-                    · expires {new Date(inv.expires_at).toLocaleDateString()}
-                  </span>
-                  <button
-                    onClick={() => void run("rev" + inv.id, () => api.revokeInvite(inv.id))}
+                  <span className="text-fg-muted">· expires {new Date(inv.expires_at).toLocaleDateString()}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto"
+                    aria-label={`Revoke invite ${inv.code}`}
                     disabled={busy !== null}
-                    className="ml-auto text-brand-600 hover:underline disabled:opacity-50 inline-flex min-h-7 items-center"
+                    onClick={() => void run("rev" + inv.id, () => api.revokeInvite(inv.id))}
                   >
-                    revoke
-                  </button>
+                    Revoke
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
         </div>
-        {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+        {err && <InlineAlert tone="error">{err}</InlineAlert>}
       </div>
     </Card>
   );

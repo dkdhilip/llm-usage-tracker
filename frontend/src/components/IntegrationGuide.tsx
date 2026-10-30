@@ -6,6 +6,8 @@ import {
   type IntegrationProviderId,
   type IntegrationTarget,
 } from "../lib/api";
+import { buttonClass } from "./ui/Button";
+import { InlineAlert } from "./ui/InlineAlert";
 
 // What the guide needs to know about a key — never the key itself. The guide only ever shows the
 // `vk_...` placeholder: a key is displayed once at creation and is not stored, so it must not be
@@ -48,7 +50,7 @@ export function keyReadiness(
     {
       ok: configuredProviders.includes(provider),
       label: `The workspace holds a real ${providerLabel} credential`,
-      fix: "Add it under Provider keys. It stays in the gateway — never in your application.",
+      fix: "Add it on the Providers tab of the Workspace page. It stays in the gateway — never in your application.",
     },
   ];
   if (key.expires_at) {
@@ -74,7 +76,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="rounded border border-line px-2 py-0.5 text-[11px] text-fg-muted hover:bg-fill"
+      className={buttonClass("secondary", "sm")}
     >
       {copied ? "Copied" : "Copy"}
     </button>
@@ -151,7 +153,7 @@ export function IntegrationGuide({
           Gateway: <code className="font-mono text-fg">{guide.gateway_url}</code>
         </p>
       )}
-      {error && <div role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</div>}
+      {error && <InlineAlert tone="error">{error}</InlineAlert>}
 
       <div role="tablist" aria-label="Provider" className="flex gap-1 border-b border-line">
         {ORDER.map((id) => (
@@ -177,7 +179,7 @@ export function IntegrationGuide({
             <ul aria-label="Readiness" className="space-y-1 text-xs">
               {checks.map((c) => (
                 <li key={c.label} data-ok={c.ok} className="flex gap-2">
-                  <span aria-hidden className={c.ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}>
+                  <span aria-hidden className={c.ok ? "text-success-fg" : "text-warning-fg"}>
                     {c.ok ? "✓" : "✗"}
                   </span>
                   <span className={c.ok ? "text-fg-muted" : "text-fg"}>
@@ -209,7 +211,7 @@ export function IntegrationGuide({
       )}
 
       {guide && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="rounded-md border border-warning-line bg-warning-soft p-3 text-xs text-warning-fg">
           <ul className="list-disc space-y-1 pl-4">
             {guide.general_notes.map((n) => (
               <li key={n}>{n}</li>

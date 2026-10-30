@@ -132,7 +132,7 @@ describe("Workspace provider keys", () => {
     await screen.findByText("saved ····1234");
     await user.click(screen.getByRole("button", { name: /^Replace .+ key$/ }));
     expect(screen.getByPlaceholderText("paste openai key")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByPlaceholderText("paste openai key")).toBeNull();
   });
 });

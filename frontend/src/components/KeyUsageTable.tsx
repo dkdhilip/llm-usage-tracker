@@ -46,7 +46,7 @@ export function KeyUsageTable({
     <button
       type="button"
       onClick={() => setSort(key)}
-      className={`inline-flex min-h-7 items-center font-medium ${sort === key ? "text-brand-text" : "text-fg-muted hover:text-fg"}`}
+      className={`inline-flex min-h-7 min-w-7 items-center justify-end font-medium ${sort === key ? "text-brand-text" : "text-fg-muted hover:text-fg"}`}
     >
       {label}
     </button>

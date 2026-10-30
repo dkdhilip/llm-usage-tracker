@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Badge } from "../../components/ui/Badge";
+import { InlineAlert } from "../../components/ui/InlineAlert";
 import { api, type KeyRow } from "../../lib/api";
 import { useConfirmDialog } from "../../components/ui/useConfirmDialog";
 
@@ -70,11 +71,11 @@ export function KeyLoggingEditor({
   return (
     <div className="space-y-2 text-sm" data-testid={`key-logging-editor-${k.id}`}>
       {dialog}
-      <div className="text-xs font-medium text-fg">Logging for {who}</div>
-      <label className="flex items-start gap-2 text-xs text-fg-muted">
+      <div className="text-ui font-medium text-fg">Logging for {who}</div>
+      <label className="flex min-h-7 items-start gap-2 text-sm text-fg">
         <input
           type="checkbox"
-          className="mt-0.5"
+          className="mt-1"
           checked={text}
           disabled={busy}
           onChange={(e) =>
@@ -90,10 +91,10 @@ export function KeyLoggingEditor({
         />
         <span>Log prompts &amp; responses for this key</span>
       </label>
-      <label className={"flex items-start gap-2 text-xs " + (text ? "text-fg-muted" : "text-fg-subtle")}>
+      <label className={"flex min-h-7 items-start gap-2 text-sm " + (text ? "text-fg" : "text-fg-muted")}>
         <input
           type="checkbox"
-          className="mt-0.5"
+          className="mt-1"
           checked={images}
           disabled={busy || !text}
           onChange={(e) =>
@@ -109,20 +110,16 @@ export function KeyLoggingEditor({
         <span>Also store images (needs the option above)</span>
       </label>
       {text && masterText === false && (
-        <p className="text-[11px] text-amber-700 dark:text-amber-400">
-          The workspace's Prompt &amp; response logging is off, so nothing is logged for this key yet.
-        </p>
+        <p className="text-xs text-warning-fg">The workspace's Prompt &amp; response logging is off, so nothing is logged for this key yet.</p>
       )}
       {text && images && masterText !== false && masterImages === false && (
-        <p className="text-[11px] text-amber-700 dark:text-amber-400">
-          The workspace's image logging is off, so images are not being stored yet.
-        </p>
+        <p className="text-xs text-warning-fg">The workspace's image logging is off, so images are not being stored yet.</p>
       )}
-      <p className="text-[11px] text-fg-subtle">
-        Turning an option off stops new capture only; content already stored stays until it expires or an admin
-        deletes the workspace's stored content.
+      <p className="text-xs text-fg-muted">
+        Turning an option off stops new capture only; content already stored stays until it expires or an admin deletes the
+        workspace's stored content.
       </p>
-      {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+      {err && <InlineAlert tone="error">{err}</InlineAlert>}
     </div>
   );
 }

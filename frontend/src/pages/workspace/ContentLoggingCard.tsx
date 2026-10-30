@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { api, type WorkspaceDetail } from "../../lib/api";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/Card";
+import { InlineAlert } from "../../components/ui/InlineAlert";
 import { useConfirmDialog } from "../../components/ui/useConfirmDialog";
 
 // ---------- content logging ----------
@@ -9,9 +12,10 @@ export function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onCh
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // hooks come before the early return below: the card appears once the workspace has loaded
+  const { confirm, dialog } = useConfirmDialog();
   if (!state) return null;
 
-  const { confirm, dialog } = useConfirmDialog();
   const toggle = async () => {
     const next = !state.enabled;
     if (
@@ -66,49 +70,31 @@ export function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onCh
   return (
     <Card title="Prompt & response logging">
       {dialog}
-      <div className="space-y-3 text-sm">
-        <p className="text-xs text-fg-muted">
-          Off by default. When on, new requests are stored encrypted with their prompt and response
-          (media, embedding vectors and credentials are never stored) and visible only to workspace
-          admins. Each record is deleted automatically after {state.retention_days} days. Usage
-          analytics are not affected.
+      <div className="space-y-4">
+        <p className="text-sm text-fg-muted">
+          Off by default. When on, new requests are stored encrypted with their prompt and response (media, embedding
+          vectors and credentials are never stored) and visible only to workspace admins. Each record is deleted
+          automatically after {state.retention_days} days. Usage analytics are not affected.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={
-              "rounded-full px-2 py-0.5 text-xs font-medium " +
-              (state.enabled
-                ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
-                : "bg-fill text-fg-muted")
-            }
-          >
+          <Badge variant={state.enabled ? "success" : "neutral"} dot>
             {state.enabled ? "On" : "Off"}
-          </span>
-          {state.updated_at && (
-            <span className="text-xs text-fg-subtle">
-              changed {new Date(state.updated_at).toLocaleString()}
-            </span>
-          )}
-          <button
-            onClick={toggle}
-            disabled={busy !== null}
-            className="ml-auto rounded-md border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill disabled:opacity-50"
-          >
-            {state.enabled ? "Turn off" : "Turn on"}
-          </button>
-          <button
-            onClick={purge}
-            disabled={busy !== null}
-            className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-          >
-            Delete stored content
-          </button>
+          </Badge>
+          {state.updated_at && <span className="text-ui text-fg-muted">changed {new Date(state.updated_at).toLocaleString()}</span>}
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button onClick={toggle} disabled={busy !== null}>
+              {state.enabled ? "Turn off" : "Turn on"}
+            </Button>
+            <Button variant="danger" onClick={purge} disabled={busy !== null}>
+              Delete stored content
+            </Button>
+          </div>
         </div>
         {state.keys_total !== undefined && (
-          <p className="text-xs text-fg-muted" data-testid="keys-logging-summary">
-            This is the workspace master switch. A key is only logged when this is on <em>and</em> the key's own
-            switch is on (set when creating a key or in the Virtual keys table).{" "}
-            <strong>
+          <p className="text-sm text-fg-muted" data-testid="keys-logging-summary">
+            This is the workspace master switch. A key is only logged when this is on <em>and</em> the key's own switch
+            is on (set when creating a key or from the key's menu on the Keys tab).{" "}
+            <strong className="text-fg">
               {state.keys_logging ?? 0} of {state.keys_total} key{state.keys_total === 1 ? "" : "s"}
             </strong>{" "}
             currently {state.enabled ? "log" : "have logging switched on (inactive while this is off)"}.
@@ -116,13 +102,16 @@ export function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onCh
         )}
         <ImageLoggingSection ws={ws} textOn={state.enabled} onChange={onChange} />
         {state.enabled === false && (
-          <p className="text-xs text-fg-subtle">
-            Turning it off stops new capture; records already stored stay until they expire or you
-            delete them.
+          <p className="text-sm text-fg-muted">
+            Turning it off stops new capture; records already stored stay until they expire or you delete them.
           </p>
         )}
-        {note && <div className="text-xs text-fg-muted">{note}</div>}
-        {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+        {note && (
+          <InlineAlert tone="success" role="status">
+            {note}
+          </InlineAlert>
+        )}
+        {err && <InlineAlert tone="error">{err}</InlineAlert>}
       </div>
     </Card>
   );
@@ -143,12 +132,12 @@ export function ImageLoggingSection({
   const img = ws.image_logging;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirmDialog();
   if (!img) return null;
   const used = img.used_bytes ?? 0;
   const cap = img.cap_bytes ?? 0;
   const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
 
-  const { confirm, dialog } = useConfirmDialog();
   const toggle = async () => {
     const next = !img.enabled;
     if (
@@ -177,40 +166,29 @@ export function ImageLoggingSection({
   };
 
   return (
-    <div className="space-y-2 border-t border-line pt-3" data-testid="image-logging">
+    <div className="space-y-3 border-t border-line pt-4" data-testid="image-logging">
       {dialog}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-fg">Store images</span>
-        <span
-          className={
-            "rounded-full px-2 py-0.5 text-xs font-medium " +
-            (img.enabled
-              ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
-              : "bg-fill text-fg-muted")
-          }
-        >
+        <span className="text-sm font-medium text-fg">Store images</span>
+        <Badge variant={img.enabled ? "success" : "neutral"} dot>
           {img.enabled ? "Images on" : "Images off"}
-        </span>
-        <button
-          onClick={toggle}
-          disabled={busy}
-          className="ml-auto rounded-md border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill disabled:opacity-50"
-        >
+        </Badge>
+        <Button className="ml-auto" onClick={toggle} disabled={busy}>
           {img.enabled ? "Turn off images" : "Turn on images"}
-        </button>
+        </Button>
       </div>
-      <p className="text-xs text-fg-muted">
+      <p className="text-sm text-fg-muted">
         Separate from text logging and off by default. Needs text logging on to take effect
-        {img.enabled && !textOn ? " (text logging is currently off, so no images are being stored)" : ""}.
-        Images live in the app database, so space is limited
+        {img.enabled && !textOn ? " (text logging is currently off, so no images are being stored)" : ""}. Images live in
+        the app database, so space is limited
         {img.max_image_bytes ? ` (up to ${mb(img.max_image_bytes)} per image` : ""}
-        {img.max_per_request ? `, ${img.max_per_request} per request)` : img.max_image_bytes ? ")" : ""}.
-        Links to images are never downloaded or stored. Each key also needs its own image switch
+        {img.max_per_request ? `, ${img.max_per_request} per request)` : img.max_image_bytes ? ")" : ""}. Links to images
+        are never downloaded or stored. Each key also needs its own image switch
         {img.enabled ? "" : " (inactive while this is off)"}.
       </p>
       {cap > 0 && (
         <div>
-          <div className="mb-1 flex justify-between text-xs text-fg-muted">
+          <div className="mb-1.5 flex justify-between text-ui text-fg-muted">
             <span>Image storage used</span>
             <span>
               {mb(used)} of {mb(cap)}
@@ -225,10 +203,10 @@ export function ImageLoggingSection({
             aria-valuemax={100}
             className="h-1.5 w-full overflow-hidden rounded bg-fill"
           >
-            <div className={"h-full " + (pct >= 90 ? "bg-red-500" : "bg-brand-600")} style={{ width: `${pct}%` }} />
+            <div className={"h-full " + (pct >= 90 ? "bg-red-600" : "bg-brand-600")} style={{ width: `${pct}%` }} />
           </div>
           {(used >= cap || img.global_full) && (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            <p className="mt-2 text-sm text-warning-fg">
               {used >= cap
                 ? "The image limit for this workspace is reached: new images are skipped until old ones expire or are deleted."
                 : "The shared image storage is full: new images are skipped for now."}
@@ -236,7 +214,7 @@ export function ImageLoggingSection({
           )}
         </div>
       )}
-      {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+      {err && <InlineAlert tone="error">{err}</InlineAlert>}
     </div>
   );
 }
