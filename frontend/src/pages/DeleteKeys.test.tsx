@@ -53,7 +53,7 @@ describe("Workspace -> red confirmation before revoke / delete", () => {
     const box = screen.getByRole("alertdialog");
     expect(within(box).getByText("Revoke this key?")).toBeTruthy();
     expect(within(box).getByText("active-one")).toBeTruthy();
-    expect(box.className).toMatch(/border-red/);
+    expect(box.className).toMatch(/border-danger-line/); // the red (danger) dialog
     expect(api.revokeKey).not.toHaveBeenCalled();
     await user.click(within(box).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();

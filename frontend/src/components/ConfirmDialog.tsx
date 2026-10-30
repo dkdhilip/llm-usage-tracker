@@ -1,10 +1,15 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { Button } from "./ui/Button";
+import { Dialog, DialogContent } from "./ui/Dialog";
+import { InlineAlert } from "./ui/InlineAlert";
 
-/** A red confirmation box for actions that cannot be undone from the UI. Escape or clicking outside cancels;
- *  focus starts on Cancel so a stray Enter never confirms. */
+/** A confirmation for an action that cannot be undone from the UI (or that shares something sensitive). It is a real
+ *  modal dialog: focus is trapped inside, Escape or an outside click cancels, and focus returns to the control that
+ *  opened it. Focus starts on Cancel so a stray Enter never confirms. Mount it while it should be open. */
 export function ConfirmDialog({
   title,
   confirmLabel,
+  tone = "danger",
   busy,
   error,
   onConfirm,
@@ -13,6 +18,8 @@ export function ConfirmDialog({
 }: {
   title: string;
   confirmLabel: string;
+  /** "danger" is red (delete, revoke, remove); "default" is for a decision with consequences that is not destructive. */
+  tone?: "danger" | "default";
   busy?: boolean;
   error?: string | null;
   onConfirm: () => void;
@@ -20,54 +27,35 @@ export function ConfirmDialog({
   children: ReactNode;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    cancelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
-    >
-      <div
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent
         role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="confirm-title"
-        className="w-full max-w-md rounded-lg border border-red-300 bg-surface shadow-xl dark:border-red-500/40"
+        title={title}
+        tone={tone}
+        showClose={false}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          cancelRef.current?.focus();
+        }}
+        footer={
+          <>
+            <Button ref={cancelRef} onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button variant={tone === "danger" ? "destructive" : "primary"} disabled={busy} onClick={onConfirm}>
+              {busy ? "Working…" : confirmLabel}
+            </Button>
+          </>
+        }
       >
-        <div className="rounded-t-lg border-b border-red-200 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
-          <h2 id="confirm-title" className="text-sm font-semibold text-red-700 dark:text-red-400">
-            {title}
-          </h2>
-        </div>
         <div className="space-y-2 px-4 py-3 text-sm text-fg-muted">{children}</div>
         {error && (
-          <div role="alert" className="px-4 pb-2 text-xs text-red-600 dark:text-red-400">
-            {error}
+          <div className="px-4 pb-2">
+            <InlineAlert tone="error">{error}</InlineAlert>
           </div>
         )}
-        <div className="flex justify-end gap-2 px-4 pb-4">
-          <button
-            type="button"
-            ref={cancelRef}
-            onClick={onCancel}
-            className="rounded border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onConfirm}
-            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {busy ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

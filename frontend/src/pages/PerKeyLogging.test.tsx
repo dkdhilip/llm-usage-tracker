@@ -107,7 +107,6 @@ describe("Workspace -> per-key logging", () => {
 
   it("opens an editor per key; turning text logging on needs a confirmation that names the key", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     page();
     await user.click(within(await rowOf("off-key")).getByRole("button", { name: "Logging" }));
     const editor = await screen.findByTestId("key-logging-editor-1");
@@ -117,15 +116,18 @@ describe("Workspace -> per-key logging", () => {
     expect(imageBox.disabled).toBe(true); // images need text logging on the same key
 
     await user.click(textBox);
-    expect(confirm.mock.calls[0][0]).toMatch(/off-key \(vk_abcdefgh…\)/);
+    let box = await screen.findByRole("alertdialog");
+    expect(box.textContent).toMatch(/off-key \(vk_abcdefgh…\)/);
+    await user.click(within(box).getByRole("button", { name: "Cancel" }));
     expect(api.updateKey).not.toHaveBeenCalled(); // declined
     await user.click(textBox);
+    box = await screen.findByRole("alertdialog");
+    await user.click(within(box).getByRole("button", { name: "Turn on" }));
     await waitFor(() => expect(api.updateKey).toHaveBeenCalledWith(1, { content_logging_enabled: true }));
   });
 
   it("turning text off also turns images off and needs no confirmation; images have their own confirmation", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     page();
     await user.click(within(await rowOf("image-key")).getByRole("button", { name: "Logging" }));
     const editor = await screen.findByTestId("key-logging-editor-3");
@@ -134,14 +136,16 @@ describe("Workspace -> per-key logging", () => {
     await waitFor(() =>
       expect(api.updateKey).toHaveBeenCalledWith(3, { content_logging_enabled: false, image_logging_enabled: false }),
     );
-    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull(); // turning text off asks nothing
 
     await user.click(within(await rowOf("text-key")).getByRole("button", { name: "Logging" }));
     const ed2 = await screen.findByTestId("key-logging-editor-2");
     const imageBox = within(ed2).getAllByRole("checkbox")[1] as HTMLInputElement;
     expect(imageBox.disabled).toBe(false);
     await user.click(imageBox);
-    expect(confirm.mock.calls[0][0]).toMatch(/faces and personal data/);
+    const box = await screen.findByRole("alertdialog");
+    expect(box.textContent).toMatch(/faces and personal data/);
+    await user.click(within(box).getByRole("button", { name: "Turn on" }));
     await waitFor(() => expect(api.updateKey).toHaveBeenCalledWith(2, { image_logging_enabled: true }));
   });
 
@@ -157,12 +161,12 @@ describe("Workspace -> per-key logging", () => {
 
   it("surfaces an update error and leaves the editor usable", async () => {
     vi.mocked(api.updateKey).mockRejectedValue(new Error("forbidden"));
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     page();
     await user.click(within(await rowOf("off-key")).getByRole("button", { name: "Logging" }));
     const editor = await screen.findByTestId("key-logging-editor-1");
     await user.click(within(editor).getAllByRole("checkbox")[0]);
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Turn on" }));
     await within(editor).findByText("forbidden");
   });
 

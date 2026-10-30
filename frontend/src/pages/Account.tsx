@@ -3,12 +3,14 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
+import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 
 export function Account() {
   const { authenticated, loading, user, workspace, role, logout, refresh } = useAuth();
   const navigate = useNavigate();
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirmDialog();
 
   if (loading) {
     return <div className="mx-auto max-w-md p-6 text-sm text-fg-subtle">Loading…</div>;
@@ -30,6 +32,7 @@ export function Account() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
+      {dialog}
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-fg">Your account</h1>
         <button
@@ -66,8 +69,14 @@ export function Account() {
             unassigned (the admin keeps them).
           </p>
           <button
-            onClick={() =>
-              window.confirm(`Leave ${workspace.name}?`) &&
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Leave ${workspace.name}?`,
+                body: "You lose access to this workspace's data. Any keys assigned to you are unassigned (the admin keeps them).",
+                confirmLabel: "Leave workspace",
+                tone: "danger",
+              });
+              if (!ok) return;
               void run(
                 "leave",
                 () => api.leaveWorkspace(),
@@ -75,8 +84,8 @@ export function Account() {
                   await refresh();
                   navigate("/welcome", { replace: true });
                 },
-              )
-            }
+              );
+            }}
             disabled={busy !== null}
             className="rounded-md border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill disabled:opacity-50"
           >
@@ -91,14 +100,20 @@ export function Account() {
           and delete the workspace first.
         </p>
         <button
-          onClick={() =>
-            window.confirm("Permanently delete your account?") &&
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Permanently delete your account?",
+              body: "This cannot be undone. A Workspace Admin must remove all members and delete the workspace first.",
+              confirmLabel: "Delete account",
+              tone: "danger",
+            });
+            if (!ok) return;
             void run(
               "delete",
               () => api.deleteAccount(),
               () => void logout(),
-            )
-          }
+            );
+          }}
           disabled={busy !== null}
           className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
         >
