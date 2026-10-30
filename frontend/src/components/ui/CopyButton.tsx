@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "../../components/ui/Button";
-import { CheckIcon, CopyIcon } from "../../components/ui/icons";
+import { Button } from "./Button";
+import { CheckIcon, CopyIcon } from "./icons";
 
 /** Copies text to the clipboard. The button says "Copied" (and a polite live region announces it) for a moment; if the
  *  browser refuses (no clipboard access), it says so instead of pretending. */

@@ -5,7 +5,7 @@ import { Button, IconButton } from "../../components/ui/Button";
 import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, XIcon } from "../../components/ui/icons";
 import { num, providerName, relTime } from "../../lib/format";
 import { cn } from "../../lib/cn";
-import { CopyButton } from "./CopyButton";
+import { CopyButton } from "../../components/ui/CopyButton";
 import { Section, SectionLevel, StoredContentSections } from "./content";
 import { ProviderDot, RowCost, StatusBadge, seconds } from "./parts";
 

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState } from "react";
 import { api, type RequestContent, type StoredImage } from "../../lib/api";
-import { CopyButton } from "./CopyButton";
+import { CopyButton } from "../../components/ui/CopyButton";
 
 const SKIP_TEXT: Record<string, string> = {
   url_not_stored: "image given as a link (links are never downloaded or stored)",
