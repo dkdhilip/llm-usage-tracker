@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "../../lib/cn";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "destructive";
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
@@ -14,6 +14,8 @@ const VARIANT: Record<ButtonVariant, string> = {
   secondary: "border-control bg-surface text-fg hover:bg-fill",
   ghost: "border-transparent bg-transparent text-fg-muted hover:bg-fill hover:text-fg",
   danger: "border-danger-line bg-surface text-danger-fg hover:bg-danger-soft",
+  // the confirming action of an irreversible choice: solid red, white text (4.8:1)
+  destructive: "border-red-600 bg-red-600 text-white hover:border-red-700 hover:bg-red-700",
 };
 
 // every size is at least 28px tall: above the 24px minimum target of WCAG 2.2 (2.5.8)

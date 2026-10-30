@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,17 +59,20 @@ describe("Workspace → Prompt & response logging", () => {
   it("shows it off by default, and turning it on needs an explicit confirmation", async () => {
     const user = userEvent.setup();
     vi.mocked(api.setContentLogging).mockResolvedValue(workspace(true));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     render(<MemoryRouter><Workspace /></MemoryRouter>);
     await screen.findByText("Prompt & response logging");
     expect(screen.getByText("Off")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Turn on" }));
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0][0]).toMatch(/30 days/);
+    let box = await screen.findByRole("alertdialog");
+    expect(within(box).getByText(/30 days/)).toBeTruthy();
+    await user.click(within(box).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(api.setContentLogging).not.toHaveBeenCalled(); // declined: nothing changed
 
     await user.click(screen.getByRole("button", { name: "Turn on" }));
+    box = await screen.findByRole("alertdialog");
+    await user.click(within(box).getByRole("button", { name: "Turn on" }));
     await waitFor(() => expect(api.setContentLogging).toHaveBeenCalledWith(true));
   });
 
@@ -78,17 +81,20 @@ describe("Workspace → Prompt & response logging", () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace(true));
     vi.mocked(api.setContentLogging).mockResolvedValue(workspace(false));
     vi.mocked(api.deleteStoredContent).mockResolvedValue({ deleted: 3 });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     render(<MemoryRouter><Workspace /></MemoryRouter>);
     await screen.findByText("On");
 
     await user.click(screen.getByRole("button", { name: "Turn off" }));
     await waitFor(() => expect(api.setContentLogging).toHaveBeenCalledWith(false));
-    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull(); // turning off asks nothing
 
     await user.click(screen.getByRole("button", { name: "Delete stored content" }));
+    let box = await screen.findByRole("alertdialog");
+    await user.click(within(box).getByRole("button", { name: "Cancel" }));
     expect(api.deleteStoredContent).not.toHaveBeenCalled(); // declined
     await user.click(screen.getByRole("button", { name: "Delete stored content" }));
+    box = await screen.findByRole("alertdialog");
+    await user.click(within(box).getByRole("button", { name: "Delete" }));
     await screen.findByText("Deleted 3 stored records.");
   });
 });
@@ -144,7 +150,6 @@ describe("Workspace -> image storage", () => {
     const user = userEvent.setup();
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace(true, false, 12_500_000));
     vi.mocked(api.setImageLogging).mockResolvedValue(workspace(true, true, 12_500_000));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     render(<MemoryRouter><Workspace /></MemoryRouter>);
     await screen.findByText("Images off");
     expect(screen.getByTestId("image-logging").textContent).toContain("12.5 MB of 50 MB");
@@ -153,11 +158,14 @@ describe("Workspace -> image storage", () => {
     expect(bar.getAttribute("aria-valuetext")).toMatch(/of/);
 
     await user.click(screen.getByRole("button", { name: "Turn on images" }));
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0][0]).toMatch(/faces and personal data/);
+    let box = await screen.findByRole("alertdialog");
+    expect(within(box).getByText(/faces and personal data/)).toBeTruthy();
+    await user.click(within(box).getByRole("button", { name: "Cancel" }));
     expect(api.setImageLogging).not.toHaveBeenCalled(); // declined
 
     await user.click(screen.getByRole("button", { name: "Turn on images" }));
+    box = await screen.findByRole("alertdialog");
+    await user.click(within(box).getByRole("button", { name: "Turn on" }));
     await waitFor(() => expect(api.setImageLogging).toHaveBeenCalledWith(true));
     expect(api.setContentLogging).not.toHaveBeenCalled(); // the two switches are independent
   });

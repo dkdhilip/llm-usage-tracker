@@ -13,6 +13,7 @@ import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
 import { ConnectPanel } from "../components/ConnectPanel";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 import { num, providerName, relTime, usd } from "../lib/format";
 import { CostCell } from "../components/CostCell";
 
@@ -228,11 +229,13 @@ function MembersCard({
     }
   };
 
+  const { confirm, dialog } = useConfirmDialog();
   const members = ws.members ?? [];
   const invites = ws.invites ?? [];
 
   return (
     <Card title={`Members (${members.length})`}>
+      {dialog}
       <div className="space-y-3">
         <div className="relative overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500" tabIndex={0} role="region" aria-label="Members table">
           <table className="w-full min-w-[28rem] text-sm">
@@ -259,10 +262,15 @@ function MembersCard({
                   <td className="py-1.5 pr-0 text-right">
                     {m.role === "member" && (
                       <button
-                        onClick={() =>
-                          window.confirm(`Remove ${m.username} from the workspace?`) &&
-                          void run("rm" + m.user_id, () => api.removeMember(m.user_id))
-                        }
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: `Remove ${m.username}?`,
+                            body: `${m.username} loses access to this workspace, and any keys assigned to them become unassigned.`,
+                            confirmLabel: "Remove",
+                            tone: "danger",
+                          });
+                          if (ok) void run("rm" + m.user_id, () => api.removeMember(m.user_id));
+                        }}
                         disabled={busy !== null}
                         className="rounded border border-line px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10"
                       >
@@ -643,15 +651,19 @@ function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: (
   const [note, setNote] = useState<string | null>(null);
   if (!state) return null;
 
+  const { confirm, dialog } = useConfirmDialog();
   const toggle = async () => {
     const next = !state.enabled;
     if (
       next &&
-      !window.confirm(
-        `Store the full prompts and responses of this workspace's requests for ${state.retention_days} days? ` +
+      !(await confirm({
+        title: "Store prompts and responses?",
+        body:
+          `Store the full prompts and responses of this workspace's requests for ${state.retention_days} days? ` +
           "Workspace admins will be able to read them, and they may contain personal or sensitive data. " +
           "Everyone in the workspace can see that this is on.",
-      )
+        confirmLabel: "Turn on",
+      }))
     )
       return;
     setBusy("toggle");
@@ -668,7 +680,14 @@ function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: (
   };
 
   const purge = async () => {
-    if (!window.confirm("Delete all stored prompts and responses of this workspace now? Usage analytics are kept."))
+    if (
+      !(await confirm({
+        title: "Delete stored content?",
+        body: "Delete all stored prompts and responses of this workspace now? Usage analytics are kept.",
+        confirmLabel: "Delete",
+        tone: "danger",
+      }))
+    )
       return;
     setBusy("purge");
     setErr(null);
@@ -686,6 +705,7 @@ function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: (
 
   return (
     <Card title="Prompt & response logging">
+      {dialog}
       <div className="space-y-3 text-sm">
         <p className="text-xs text-fg-muted">
           Off by default. When on, new requests are stored encrypted with their prompt and response
@@ -768,16 +788,20 @@ function ImageLoggingSection({
   const cap = img.cap_bytes ?? 0;
   const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
 
+  const { confirm, dialog } = useConfirmDialog();
   const toggle = async () => {
     const next = !img.enabled;
     if (
       next &&
-      !window.confirm(
-        "Also store the actual images (pictures sent to vision models and images the model generates)? " +
+      !(await confirm({
+        title: "Also store images?",
+        body:
+          "Also store the actual images (pictures sent to vision models and images the model generates)? " +
           "Images can contain faces and personal data and cannot be redacted. Workspace admins will be able " +
           "to view them for the retention period. Only PNG, JPEG, GIF and WebP embedded in the request are " +
           "kept (never downloaded from a link), they are encrypted, and storage is capped.",
-      )
+        confirmLabel: "Turn on",
+      }))
     )
       return;
     setBusy(true);
@@ -794,6 +818,7 @@ function ImageLoggingSection({
 
   return (
     <div className="space-y-2 border-t border-line pt-3" data-testid="image-logging">
+      {dialog}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-fg">Store images</span>
         <span
@@ -863,8 +888,10 @@ function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: () => v
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const { confirm, dialog } = useConfirmDialog();
   return (
     <Card title="Workspace settings">
+      {dialog}
       <div className="space-y-3 text-sm">
         <div className="flex items-end gap-2">
           <label className="flex-1 text-xs font-medium text-fg-muted">
@@ -903,7 +930,13 @@ function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: () => v
           </p>
           <button
             onClick={async () => {
-              if (!window.confirm(`Delete ${ws.name} and all its data?`)) return;
+              const ok = await confirm({
+                title: `Delete ${ws.name}?`,
+                body: `Delete ${ws.name} and all its data? This removes all its virtual keys, usage and provider keys, and cannot be undone.`,
+                confirmLabel: "Delete workspace",
+                tone: "danger",
+              });
+              if (!ok) return;
               setBusy("delete");
               setErr(null);
               try {
@@ -979,8 +1012,10 @@ function KeyLoggingEditor({
   const images = !!k.image_logging_enabled;
   const who = `${k.label} (${k.key_prefix}…)`;
 
+  const { confirm, dialog } = useConfirmDialog();
+
   async function apply(patch: { content_logging_enabled?: boolean; image_logging_enabled?: boolean }, ask?: string) {
-    if (ask && !window.confirm(ask)) return;
+    if (ask && !(await confirm({ title: "Change what is logged?", body: ask, confirmLabel: "Turn on" }))) return;
     setBusy(true);
     setErr(null);
     try {
@@ -995,6 +1030,7 @@ function KeyLoggingEditor({
 
   return (
     <div className="space-y-2 text-sm" data-testid={`key-logging-editor-${k.id}`}>
+      {dialog}
       <div className="text-xs font-medium text-fg">Logging for {who}</div>
       <label className="flex items-start gap-2 text-xs text-fg-muted">
         <input
