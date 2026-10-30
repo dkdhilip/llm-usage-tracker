@@ -30,6 +30,7 @@
     "workspaceAccessible",
     "playgroundFlow",
     "playgroundAccessible",
+    "textSpacingAndResize",
     "confirmDialogTrapAndReturn",
     "noNativeConfirmDialogs",
     "dashboardErrorAnnounced",
