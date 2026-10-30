@@ -31,8 +31,9 @@ describe("FilterBar", () => {
       />,
     );
     expect(screen.getByRole("combobox", { name: "Provider" })).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Key" })).toBeTruthy();
+    // each name contains what is shown on the control, so voice control and screen readers agree
+    expect(screen.getByRole("combobox", { name: "Model: All models" })).toHaveTextContent("All models");
+    expect(screen.getByRole("combobox", { name: "Key: All keys" })).toHaveTextContent("All keys");
   });
 
   it("writes provider names as brands in the Provider dropdown", () => {

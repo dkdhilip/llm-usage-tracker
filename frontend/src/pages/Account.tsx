@@ -37,7 +37,7 @@ export function Account() {
         <h1 className="text-lg font-semibold text-fg">Your account</h1>
         <button
           onClick={() => void logout()}
-          className="text-sm text-fg-muted hover:underline"
+          className="text-sm text-fg-muted hover:underline inline-flex min-h-7 items-center"
         >
           Sign out
         </button>

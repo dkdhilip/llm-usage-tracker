@@ -19,6 +19,7 @@ export function InlineAlert({
   children,
   action,
   role,
+  id,
   className,
 }: {
   tone?: AlertTone;
@@ -26,11 +27,13 @@ export function InlineAlert({
   children?: ReactNode;
   action?: ReactNode;
   role?: "alert" | "status" | "note";
+  /** so a field can point at it with aria-describedby */
+  id?: string;
   className?: string;
 }) {
   const t = TONE[tone];
   return (
-    <div role={role ?? t.role} className={cn("flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm", t.box, className)}>
+    <div id={id} role={role ?? t.role} className={cn("flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm", t.box, className)}>
       <span className="mt-0.5 shrink-0">{t.icon}</span>
       <div className="min-w-0 flex-1">
         {title && <p className="font-semibold">{title}</p>}

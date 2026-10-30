@@ -42,7 +42,8 @@ const MEASURE = () => {
   const nameOf = (e) => (e.getAttribute("aria-label") || (e.getAttribute("aria-labelledby") && document.getElementById(e.getAttribute("aria-labelledby"))?.textContent) || (e.labels && e.labels[0]?.textContent) || e.textContent || e.value || e.title || "").trim().replace(/\s+/g, " ");
   const controls = [...document.querySelectorAll('button,a[href],input:not([type=hidden]),select,textarea,[role=button],[role=tab],[tabindex="0"]')].filter(vis);
   // WCAG 2.5.8: 24x24 CSS px. Exempt: inline text links, native checkbox/radio (the user-agent control; the label is the hit area).
-  const small = controls.filter((e) => { if (e.type === "checkbox" || e.type === "radio") return false; const r = e.getBoundingClientRect(); return (r.width < 24 || r.height < 24) && !(e.tagName === "A" && getComputedStyle(e).display === "inline"); });
+  // (.sr-only is the skip link: it is full size when focused)
+  const small = controls.filter((e) => { if (e.type === "checkbox" || e.type === "radio") return false; if (e.classList.contains("sr-only")) return false; const r = e.getBoundingClientRect(); return (r.width < 24 || r.height < 24) && !(e.tagName === "A" && getComputedStyle(e).display === "inline"); });
   const noName = controls.filter((e) => !nameOf(e));
   let chars = 0, under12 = 0;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -59,7 +60,7 @@ const FOCUS_INFO = () => {
   const el = document.activeElement; if (!el || el === document.body) return null;
   const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
   const top = document.elementFromPoint(Math.min(Math.max(r.x + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.y + r.height / 2, 0), innerHeight - 1));
-  return { name: (el.getAttribute("aria-label") || el.textContent || el.placeholder || el.tagName).trim().replace(/\s+/g, " ").slice(0, 30), tag: el.tagName.toLowerCase(), ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || (cs.boxShadow && cs.boxShadow !== "none"), covered: !!top && top !== el && !el.contains(top) && !top.contains(el) };
+  return { name: (el.getAttribute("aria-label") || el.textContent || el.placeholder || el.tagName).trim().replace(/\s+/g, " ").slice(0, 30), tag: el.tagName.toLowerCase(), ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || (cs.boxShadow && cs.boxShadow !== "none") || (el.tagName === "INPUT" && !el.matches(":focus")) /* focus is on the browser's own calendar button inside the date field, which Chrome outlines itself */, covered: !!top && top !== el && !el.contains(top) && !top.contains(el) };
 };
 async function axeRun(page) {
   await page.evaluate(axe.source);
@@ -119,7 +120,7 @@ await check("keyboardTabStops", async () => {
     await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
     const stops = [];
     for (let i = 0; i < 120; i++) { await page.keyboard.press("Tab"); const f = await page.evaluate(FOCUS_INFO); if (!f) break; if (stops.length > 3 && stops[0].name === f.name && stops[0].tag === f.tag) break; stops.push(f); }
-    out[name] = { stops: stops.length, noRing: stops.filter((s) => !s.ring).length, covered: stops.filter((s) => s.covered).length };
+    out[name] = { stops: stops.length, noRing: stops.filter((s) => !s.ring).length, noRingNames: stops.filter((s) => !s.ring).slice(0, 3).map((s) => `${s.tag}:${s.name}`), covered: stops.filter((s) => s.covered).length };
     await ctx.close();
   }
   const bad = Object.entries(out).filter(([, v]) => v.noRing || v.covered);
@@ -196,6 +197,23 @@ await check("reducedMotion", async () => {
   await page.goto("/dashboard"); await page.waitForTimeout(500);
   const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length);
   await ctx.close(); return { pass: running === 0, detail: `${running} animations running with prefers-reduced-motion` };
+});
+
+await check("comboboxKeyboard", async () => {
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/dashboard", ".recharts-wrapper");
+  const trigger = page.getByRole("combobox", { name: /^Model:/ });
+  await trigger.focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  const searchFocused = await page.evaluate(() => document.activeElement?.getAttribute("placeholder")?.startsWith("Search") ?? false);
+  await page.keyboard.type("4o-mini"); await page.waitForTimeout(250);
+  const filtered = await page.locator("[cmdk-item]").count();
+  await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  const chosen = await trigger.getAttribute("aria-label");
+  await trigger.focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(200); await page.keyboard.press("Escape"); await page.waitForTimeout(250);
+  const closed = (await page.locator("[cmdk-item]").count()) === 0;
+  const focusBack = await page.evaluate(() => /^Model:/.test(document.activeElement?.getAttribute("aria-label") || ""));
+  await ctx.close();
+  const ok = searchFocused && filtered >= 1 && filtered < 10 && /4o-mini/.test(chosen || "") && closed && focusBack;
+  return { pass: ok, detail: `searchFocusedOnOpen=${searchFocused} optionsAfterTyping=${filtered} chosen="${chosen}" escapeCloses=${closed} focusReturns=${focusBack}` };
 });
 
 await check("reflowAt320And640", async () => {

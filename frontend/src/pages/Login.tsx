@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/Card";
+import { InlineAlert } from "../components/ui/InlineAlert";
 import { USERNAME_PATTERN, USERNAME_RULES } from "../lib/validation";
 
 export function Login() {
@@ -54,6 +55,8 @@ export function Login() {
               maxLength={32}
               pattern={USERNAME_PATTERN}
               title={USERNAME_RULES}
+              aria-invalid={err ? true : undefined}
+              aria-describedby={err ? "auth-error" : undefined}
               className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -71,12 +74,18 @@ export function Login() {
               autoComplete={mode === "signup" ? "new-password" : "current-password"}
               required
               minLength={8}
+              aria-invalid={err ? true : undefined}
+              aria-describedby={err ? "auth-error" : undefined}
               className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
-          {err && <div className="text-sm text-red-600 dark:text-red-400">{err}</div>}
+          {err && (
+            <InlineAlert id="auth-error" tone="error">
+              {err}
+            </InlineAlert>
+          )}
           <button
             type="submit"
             disabled={busy || username.trim().length < 3 || password.length < 8}

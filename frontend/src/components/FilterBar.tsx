@@ -1,6 +1,7 @@
 import type { ModelInfo } from "../lib/api";
 import type { KeyOption } from "../lib/keyOptions";
 import { KeyPicker } from "./KeyPicker";
+import { Combobox } from "./ui/Combobox";
 import { providerName } from "../lib/format";
 import {
   DEFAULT_RANGE_DAYS,
@@ -104,22 +105,16 @@ export function FilterBar({
         ))}
       </select>
 
-      <select
-        aria-label="Model"
-        className={selectClass}
+      <Combobox
+        label="Model"
         value={filters.model}
-        onChange={(e) => onChange({ ...filters, model: e.target.value })}
-      >
-        <option value="">All models</option>
-        {visibleModels.map((m) => (
-          <option key={`${m.provider}/${m.model}`} value={m.model}>
-            {m.model}
-          </option>
-        ))}
-      </select>
+        onChange={(model) => onChange({ ...filters, model })}
+        options={visibleModels.map((m) => ({ value: m.model, label: m.model }))}
+        allLabel="All models"
+        searchPlaceholder="Search models…"
+      />
 
       <KeyPicker
-        className={selectClass}
         keys={keys}
         value={filters.keyId}
         onChange={(keyId) => onChange({ ...filters, keyId })}

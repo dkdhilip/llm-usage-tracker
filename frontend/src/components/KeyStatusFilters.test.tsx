@@ -14,12 +14,13 @@ const KEYS: KeyOption[] = [
 
 const picker = (value = "", onChange = vi.fn()) =>
   render(<KeyPicker keys={KEYS} value={value} onChange={onChange} className="" />);
-const open = () => userEvent.click(screen.getByRole("button", { name: "Key" }));
+const open = () => userEvent.click(screen.getByRole("combobox", { name: /^Key:/ }));
 const optionNames = () => screen.getAllByRole("option").map((o) => o.textContent);
 
 describe("KeyPicker", () => {
-  it("opens with Active ticked and only active keys listed", async () => {
+  it("is a combobox named with its current choice, and opens with Active ticked and only active keys listed", async () => {
     picker();
+    expect(screen.getByRole("combobox", { name: "Key: All keys" })).toHaveTextContent("All keys"); // the name contains the visible text
     await open();
     expect(screen.getByRole("checkbox", { name: "Active" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Revoked" })).not.toBeChecked();
@@ -46,14 +47,35 @@ describe("KeyPicker", () => {
     const onChange = vi.fn();
     picker("", onChange);
     await open();
-    await userEvent.click(screen.getByRole("option", { name: "sam-anthropic" }).querySelector("button")!);
+    await userEvent.click(screen.getByRole("option", { name: "sam-anthropic" }));
     expect(onChange).toHaveBeenCalledWith("1");
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
+  it("can be searched and chosen from the keyboard: type, then Enter", async () => {
+    const onChange = vi.fn();
+    picker("", onChange);
+    await open();
+    const search = screen.getByRole("combobox", { name: "Search key" }) as HTMLInputElement;
+    expect(search).toHaveFocus(); // typing works at once, without tabbing into the list
+    await userEvent.click(screen.getByRole("checkbox", { name: "Revoked" }));
+    await userEvent.type(search, "old");
+    expect(optionNames()).toEqual(["old-keyrevoked"]);
+    await userEvent.keyboard("{Enter}");
+    expect(onChange).toHaveBeenCalledWith("2");
+    // Escape and focus return belong to the popover itself: checked in the browser by the UI audit harness
+  });
+
+  it("says so when nothing matches the search", async () => {
+    picker();
+    await open();
+    await userEvent.type(screen.getByRole("combobox", { name: "Search key" }), "zzz");
+    expect(screen.getByText("No match")).toBeInTheDocument();
+  });
+
   it("keeps the chosen key listed and named even when its status is not ticked", async () => {
     picker("3");
-    expect(screen.getByRole("button", { name: "Key" })).toHaveTextContent("gone-key");
+    expect(screen.getByRole("combobox", { name: "Key: gone-key" })).toHaveTextContent("gone-key");
     await open();
     expect(optionNames()).toContain("gone-keydeleted");
   });

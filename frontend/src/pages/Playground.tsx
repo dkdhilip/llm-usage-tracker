@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type ChatResult, type KeyInspect, type ModelInfo } from "../lib/api";
 import { Card } from "../components/Card";
+import { InlineAlert } from "../components/ui/InlineAlert";
 import { costSourceLabel, providerName, usd } from "../lib/format";
 
 const DEFAULT_PROMPT =
@@ -98,10 +99,16 @@ export function Playground() {
               className="mt-1 w-full rounded-md border border-line px-2 py-1.5 font-mono text-xs"
               placeholder="vk_…  (create one on the Workspace page)"
               value={key}
+              aria-invalid={keyError ? true : undefined}
+              aria-describedby={keyError ? "key-error" : undefined}
               onChange={(e) => setKey(e.target.value)}
             />
           </label>
-          {keyError && <div className="text-xs text-red-600 dark:text-red-400">{keyError}</div>}
+          {keyError && (
+            <InlineAlert id="key-error" tone="error">
+              {keyError}
+            </InlineAlert>
+          )}
           {inspect && (
             <div className="rounded-md bg-surface-2 px-2 py-1.5 text-[11px] text-fg-muted">
               {inspect.label} · {inspect.providers.length} provider
@@ -160,12 +167,8 @@ export function Playground() {
             {busy ? "Sending…" : "Send"}
           </button>
 
-          {error && <div className="text-xs text-red-600 dark:text-red-400">{error}</div>}
-          {blockReason && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-300">
-              Can't send: {blockReason}.
-            </div>
-          )}
+          {error && <InlineAlert tone="error">{error}</InlineAlert>}
+          {blockReason && <InlineAlert tone="warning">Can't send: {blockReason}.</InlineAlert>}
           <p className="text-[11px] text-fg-subtle">
             Every request calls the real provider and costs money. OpenRouter cost is the
             provider's actual charge; the others are estimated from the price table.
