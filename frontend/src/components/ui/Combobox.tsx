@@ -2,6 +2,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { useId, useRef, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import { pageContainer } from "../../lib/portal";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "./icons";
 
 export interface ComboOption {
@@ -62,7 +63,7 @@ export function Combobox({
           <ChevronDownIcon className="shrink-0 text-fg-subtle" />
         </button>
       </Popover.Trigger>
-      <Popover.Portal>
+      <Popover.Portal container={pageContainer()}>
         <Popover.Content align="start" sideOffset={4} onOpenAutoFocus={(e) => { e.preventDefault(); search.current?.focus(); }} className="z-50 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface p-1.5 shadow-lg focus:outline-none">
           {children}
           <Command label={`Search ${label.toLowerCase()}`} className="flex flex-col">

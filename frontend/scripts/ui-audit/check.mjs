@@ -198,13 +198,85 @@ await check("requestDetailOnPhone", async () => {
 });
 
 await check("confirmDialogTrapAndReturn", async () => {
+  // Revoke now lives in the key's "⋯" menu: open it, choose Revoke, then the dialog must trap Tab and give focus back
   const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/workspace", "text=Virtual keys");
-  const btn = page.getByRole("row", { name: /mixed-key/ }).getByRole("button", { name: /Revoke/ }); await btn.focus(); await btn.click(); await page.waitForTimeout(400);
+  const kebab = page.getByRole("button", { name: "More actions for mixed-key" }); await kebab.focus(); await kebab.click(); await page.waitForTimeout(300);
+  await page.getByRole("menuitem", { name: "Revoke key" }).click(); await page.waitForTimeout(500);
   const found = await page.evaluate(() => !!document.querySelector('[role="alertdialog"],[role="dialog"]'));
   let inside = 0; if (found) for (let i = 0; i < 8; i++) { await page.keyboard.press("Tab"); inside += await page.evaluate(() => (document.querySelector('[role="alertdialog"],[role="dialog"]')?.contains(document.activeElement) ? 1 : 0)); }
-  if (found) { await page.keyboard.press("Escape"); await page.waitForTimeout(300); }
-  const back = found ? await page.evaluate(() => /revoke/i.test(document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent || "")) : false;
-  await ctx.close(); return { pass: found && inside === 8 && back, detail: `dialog=${found} tabsInside=${inside}/8 focusReturnedToRevoke=${back}` };
+  if (found) { await page.keyboard.press("Escape"); await page.waitForTimeout(400); }
+  const back = found ? await page.evaluate(() => /more actions for mixed-key/i.test(document.activeElement?.getAttribute("aria-label") || "")) : false;
+  await ctx.close(); return { pass: found && inside === 8 && back, detail: `dialog=${found} tabsInside=${inside}/8 focusReturnedToKeyMenu=${back}` };
+});
+
+await check("workspaceTabs", async () => {
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/workspace", "text=Virtual keys");
+  const names = await page.getByRole("tab").allTextContents();
+  const first = await page.getByRole("tab", { name: /^Keys/ }).getAttribute("aria-selected");
+  await page.getByRole("tab", { name: /^Keys/ }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(150);
+  const moved = await page.evaluate(() => document.activeElement?.getAttribute("role") === "tab" && /Providers/.test(document.activeElement.textContent));
+  await page.keyboard.press("Enter"); await page.waitForTimeout(400);
+  const providers = await page.evaluate(() => ({ url: location.search, shown: /Provider keys/.test(document.body.innerText), keysGone: !document.getElementById("keys-title") }));
+  const p2 = await ctx.newPage(); await load(p2, "/workspace?tab=settings");
+  const deep = await p2.evaluate(() => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent);
+  await ctx.close();
+  const pass = names.length === 4 && first === "true" && moved && providers.url === "?tab=providers" && providers.shown && providers.keysGone && deep === "Settings";
+  return { pass, detail: JSON.stringify({ tabs: names, defaultKeys: first === "true", arrowMoves: moved, ...providers, deepLinkSettings: deep }) };
+});
+
+await check("keyMenuKeyboard", async () => {
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/workspace", "text=Virtual keys");
+  const kebab = page.getByRole("button", { name: "More actions for prod-openai" }); await kebab.focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  const menu = await page.evaluate(() => { const m = document.querySelector('[role="menu"]'); return { open: !!m, items: [...(m?.querySelectorAll('[role="menuitem"]') ?? [])].map((i) => i.textContent.trim()), focusIn: !!m?.contains(document.activeElement) }; });
+  await page.keyboard.press("ArrowDown"); await page.waitForTimeout(100);
+  const moved = await page.evaluate(() => document.activeElement?.getAttribute("role") === "menuitem");
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({ closed: !document.querySelector('[role="menu"]'), focusBack: /more actions for prod-openai/i.test(document.activeElement?.getAttribute("aria-label") || "") }));
+  await ctx.close();
+  return { pass: menu.open && menu.focusIn && menu.items.includes("Revoke key") && moved && after.closed && after.focusBack, detail: JSON.stringify({ ...menu, arrowFocusesItem: moved, ...after }) };
+});
+
+await check("createKeyDrawer", async () => {
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/workspace", "text=Virtual keys");
+  const trigger = page.getByRole("button", { name: "Create key" }); await trigger.focus(); await trigger.click(); await page.waitForTimeout(500);
+  const open = await page.evaluate(() => { const d = document.querySelector('[role="dialog"]'); return { dialog: !!d, named: d?.getAttribute("aria-labelledby") ? !!document.getElementById(d.getAttribute("aria-labelledby"))?.textContent : false, focusIn: !!d?.contains(document.activeElement) }; });
+  await page.mouse.click(40, 400); await page.waitForTimeout(300);
+  const stillOpen = await page.evaluate(() => !!document.querySelector('[role="dialog"]')); // a stray click must not close it
+  await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+  const after = await page.evaluate(() => ({ closed: !document.querySelector('[role="dialog"]'), focusBack: /create key/i.test(document.activeElement?.textContent || "") }));
+  await ctx.close();
+  return { pass: open.dialog && open.named && open.focusIn && stillOpen && after.closed && after.focusBack, detail: JSON.stringify({ ...open, outsideClickKeepsOpen: stillOpen, ...after }) };
+});
+
+await check("keysTableFitsDesktop", async () => {
+  // every column, including the "⋯" actions, is visible at 1440 without sideways scrolling inside the card
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/workspace", "text=Virtual keys");
+  const r = await page.evaluate(() => { const region = document.querySelector('[aria-label="Virtual keys table"]'); const kebab = document.querySelector('button[aria-label^="More actions for"]'); const box = kebab?.getBoundingClientRect(); const rb = region?.getBoundingClientRect(); return { scrolls: region ? region.scrollWidth - region.clientWidth : -1, kebabInside: !!(box && rb && box.right <= rb.right + 1) }; });
+  await ctx.close(); return { pass: r.scrolls === 0 && r.kebabInside, detail: JSON.stringify(r) };
+});
+
+await check("workspaceAccessible", async () => {
+  // every tab, the open key menu and the open drawer, light and dark, desktop and phone
+  const out = {};
+  for (const [w, theme] of [[1440, "light"], [1440, "dark"], [390, "light"], [390, "dark"]]) {
+    const ctx = await context("auditadmin", w, theme); const page = await ctx.newPage();
+    for (const tab of ["keys", "providers", "team", "settings"]) {
+      await load(page, tab === "keys" ? "/workspace" : `/workspace?tab=${tab}`, "[role=tabpanel]");
+      if (SHOTS) await page.screenshot({ path: join(OUT, "shots", `workspace-${tab}-${w}-${theme}.png`), fullPage: true });
+      const v = await axeRun(page); const m = await page.evaluate(MEASURE);
+      out[`${tab}-${w}-${theme}`] = { axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), unnamed: m.unnamed, small: m.small, overflow: m.overflow };
+    }
+    await load(page, "/workspace", "text=Virtual keys");
+    await page.getByRole("button", { name: /^More actions for/ }).first().click(); await page.waitForTimeout(300);
+    let v = await axeRun(page); out[`menu-${w}-${theme}`] = { axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
+    await page.keyboard.press("Escape"); await page.waitForTimeout(200);
+    await page.getByRole("button", { name: "Create key" }).click(); await page.waitForTimeout(500);
+    if (SHOTS) await page.screenshot({ path: join(OUT, "shots", `workspace-drawer-${w}-${theme}.png`) });
+    v = await axeRun(page); out[`drawer-${w}-${theme}`] = { axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
+    await ctx.close();
+  }
+  const bad = Object.entries(out).filter(([, v]) => v.axe || v.unnamed || v.overflow > 0);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views, 0 violations` };
 });
 
 await check("noNativeConfirmDialogs", async () => {
