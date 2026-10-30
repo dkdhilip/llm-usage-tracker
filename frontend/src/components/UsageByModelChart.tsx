@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import type { ByModelRow } from "../lib/api";
 import { Card } from "./Card";
+import { PanelPlaceholder, type PanelStatus } from "./ui/PanelState";
 import { providerColor } from "../lib/chartColors";
 import { providerName, tokens } from "../lib/format";
 import { chartTheme, useTheme } from "../lib/theme";
@@ -26,13 +27,21 @@ export function modelsSummary(rows: { name: string; tokens: number }[]): string 
 
 const short = (s: string) => (s.length > 30 ? s.slice(0, 29) + "…" : s);
 
-export function UsageByModelChart({ data }: { data: ByModelRow[] }) {
+export function UsageByModelChart({ data, state = "ready" }: { data: ByModelRow[]; state?: PanelStatus }) {
   const ct = chartTheme(useTheme().isDark);
   const rows = [...data]
     .sort((a, b) => b.total_tokens - a.total_tokens)
     .map((r) => ({ name: r.model, tokens: r.total_tokens, provider: r.provider }));
   const providers = [...new Set(rows.map((r) => r.provider))];
   const summary = modelsSummary(rows);
+
+  if (state !== "ready") {
+    return (
+      <Card title="Tokens by model">
+        <PanelPlaceholder state={state} className="h-72" />
+      </Card>
+    );
+  }
 
   return (
     <Card

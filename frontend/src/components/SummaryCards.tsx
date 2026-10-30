@@ -48,17 +48,29 @@ function CostStat({ data }: { data: UsageSummary }) {
 export function SummaryCards({
   data,
   loading,
+  error,
 }: {
   data: UsageSummary | null;
   loading: boolean;
+  /** The data failed to load: show dashes, not zeros (zero would read as "no usage"). */
+  error?: boolean;
 }) {
+  if (error) {
+    return (
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {["Total Requests", "Total Tokens", "Cost", "Active Virtual Keys"].map((l) => (
+          <Stat key={l} label={l} value="—" />
+        ))}
+      </div>
+    );
+  }
   if (loading || !data) {
     return (
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-[92px] animate-pulse rounded-xl border border-line bg-surface"
+            className="h-[92px] animate-pulse rounded-xl border border-line bg-surface motion-reduce:animate-none"
           />
         ))}
       </div>

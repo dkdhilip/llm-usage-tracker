@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { TimeseriesPoint } from "../lib/api";
 import { Card } from "./Card";
+import { PanelPlaceholder, type PanelStatus } from "./ui/PanelState";
 import { providerColor } from "../lib/chartColors";
 import { costLabel, num, providerName, tokens, usd } from "../lib/format";
 import { chartTheme, useTheme } from "../lib/theme";
@@ -180,7 +181,7 @@ export function DayTooltip({
 
 /** Usage per day as stacked bars (one colour per provider), with the period total as the headline and a legend
  *  that gives every provider its own number, so a small provider is readable even when its bar is thin. */
-export function UsageOverTimeChart({ data }: { data: TimeseriesPoint[] }) {
+export function UsageOverTimeChart({ data, state = "ready" }: { data: TimeseriesPoint[]; state?: PanelStatus }) {
   const [metric, setMetric] = useState<Metric>("requests");
   const ct = chartTheme(useTheme().isDark);
   const daily = useMemo(() => buildDaily(data, metric), [data, metric]);
@@ -190,6 +191,14 @@ export function UsageOverTimeChart({ data }: { data: TimeseriesPoint[] }) {
   const unit = METRICS.find((m) => m.id === metric)!.unit;
   const days = rows.length;
   const span = days === 1 ? "1 day" : `${days} days`;
+
+  if (state !== "ready") {
+    return (
+      <Card title="Usage over time">
+        <PanelPlaceholder state={state} className="h-72" />
+      </Card>
+    );
+  }
 
   return (
     <Card

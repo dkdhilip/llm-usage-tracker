@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   api,
+  isConnectionProblem,
   setSessionExpiredHandler,
   type AuthUser,
   type WorkspaceRef,
@@ -30,6 +31,9 @@ interface AuthCtx {
   signup: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** The server could not be reached (or is failing) while checking the session. The visitor is NOT treated as
+   *  signed out: the app says so and offers a retry instead of showing the sign-in form. */
+  connectionError: boolean;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -38,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
   const userRef = useRef<AuthUser | null>(null);
   userRef.current = user;
 
@@ -55,8 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await api.me();
       setUser(me.authenticated ? me.user : null);
-    } catch {
-      setUser(null);
+      setConnectionError(false);
+    } catch (e) {
+      // A dead network or a failing server says nothing about the session, so keep whoever is signed in.
+      if (isConnectionProblem(e)) setConnectionError(true);
+      else setUser(null);
     } finally {
       setLoading(false);
     }
@@ -93,12 +101,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isWorkspaceAdmin: workspace?.role === "admin",
       loading,
       sessionExpired,
+      connectionError,
       login,
       signup,
       logout,
       refresh,
     };
-  }, [user, loading, sessionExpired, login, signup, logout, refresh]);
+  }, [user, loading, sessionExpired, connectionError, login, signup, logout, refresh]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

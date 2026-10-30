@@ -11,6 +11,10 @@ import {
 } from "../lib/api";
 import { Card } from "../components/Card";
 import { costSourceLabel, providerName, relTime, usd } from "../lib/format";
+import { Button } from "../components/ui/Button";
+import { Dialog, DialogContent } from "../components/ui/Dialog";
+import { InlineAlert } from "../components/ui/InlineAlert";
+import { Skeleton } from "../components/ui/Skeleton";
 
 const FILTER_KEYS = ["key_id", "provider", "model", "status", "start", "end"] as const;
 
@@ -35,6 +39,7 @@ export function Requests() {
   const [content, setContent] = useState<RequestContent | null>(null);
   const [contentErr, setContentErr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [keys, setKeys] = useState<KeyRow[]>([]);
 
@@ -72,6 +77,7 @@ export function Requests() {
       const p = new URLSearchParams(params);
       p.set("limit", "50");
       if (after) p.set("cursor", String(after));
+      setLoading(true);
       api
         .listRequests("?" + p.toString())
         .then((r) => {
@@ -82,7 +88,8 @@ export function Requests() {
           setContentLogging(!!r.content_logging_enabled);
           setError(null);
         })
-        .catch((e: Error) => setError(e.message));
+        .catch((e: Error) => setError(e.message))
+        .finally(() => setLoading(false));
     },
     [params],
   );
@@ -119,9 +126,17 @@ export function Requests() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+        <InlineAlert
+          tone="error"
+          title="Couldn't load requests"
+          action={
+            <Button size="sm" onClick={() => load(null)}>
+              Retry
+            </Button>
+          }
+        >
           {error}
-        </div>
+        </InlineAlert>
       )}
 
       <div className="flex flex-wrap items-end gap-2 rounded-md border border-line bg-surface-2 px-3 py-2 text-xs">
@@ -225,18 +240,38 @@ export function Requests() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {rows.length === 0 && loading && !error &&
+                [0, 1, 2, 3, 4].map((i) => (
+                  <tr key={i} aria-hidden="true" className="border-b border-line last:border-0">
+                    <td colSpan={7} className="py-2.5">
+                      <Skeleton className="h-5 w-full" />
+                    </td>
+                  </tr>
+                ))}
+              {rows.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-fg-subtle">
-                    No requests yet.
+                  <td colSpan={7} className="py-8 text-center text-fg-muted">
+                    {error
+                      ? "Couldn't load requests."
+                      : hasFilters
+                        ? "No requests match these filters."
+                        : "No requests yet. Point your app at the gateway and its calls will appear here."}
                   </td>
                 </tr>
               )}
               {rows.map((r) => (
                 <tr
                   key={r.id}
+                  tabIndex={0}
+                  aria-haspopup="dialog"
                   onClick={() => setOpen(r)}
-                  className="cursor-pointer border-b border-line last:border-0 hover:bg-fill"
+                  onKeyDown={(e) => {
+                    if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                      e.preventDefault();
+                      setOpen(r);
+                    }
+                  }}
+                  className="cursor-pointer border-b border-line last:border-0 hover:bg-fill focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-text"
                 >
                   <td className="py-2 pr-3 text-xs text-fg-subtle">{relTime(r.ts)}</td>
                   <td className="py-2 pr-3">{r.key_label}</td>
@@ -275,80 +310,68 @@ export function Requests() {
         )}
       </Card>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-20 flex justify-end bg-black/20"
-          onClick={() => setOpen(null)}
-        >
-          <div
-            className="h-full w-full max-w-lg overflow-y-auto bg-surface p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold text-fg">Request detail</h2>
-              <button
-                onClick={() => setOpen(null)}
-                className="text-fg-subtle hover:text-fg"
-              >
-                ✕
-              </button>
-            </div>
-            <dl className="space-y-1.5 text-sm">
-              {[
-                ["Request ID", open.request_id],
-                ["Time", new Date(open.ts).toLocaleString()],
-                ["Key", `${open.key_label} (${open.key_prefix}…)`],
-                ["Provider / model", `${open.provider}/${open.model}`],
-                [
-                  "Tokens",
-                  `${open.prompt_tokens} prompt · ${open.completion_tokens} completion · ${open.total_tokens} total`,
-                ],
-                [
-                  "Cost",
-                  `${usd(open.cost)} (${costSourceLabel(open.cost_source, true)})`,
-                ],
-                ["Latency", `${open.latency_ms} ms`],
-                ["Status", open.status],
-              ].map(([k, v]) => (
-                <div key={k} className="flex gap-2">
-                  <dt className="w-32 shrink-0 text-fg-subtle">{k}</dt>
-                  <dd className="font-mono text-xs text-fg">{v}</dd>
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        {open && (
+          <DialogContent placement="right" title="Request detail">
+            <div className="p-5">
+              <dl className="space-y-1.5 text-sm">
+                {[
+                  ["Request ID", open.request_id],
+                  ["Time", new Date(open.ts).toLocaleString()],
+                  ["Key", `${open.key_label} (${open.key_prefix}…)`],
+                  ["Provider / model", `${open.provider}/${open.model}`],
+                  [
+                    "Tokens",
+                    `${open.prompt_tokens} prompt · ${open.completion_tokens} completion · ${open.total_tokens} total`,
+                  ],
+                  [
+                    "Cost",
+                    `${usd(open.cost)} (${costSourceLabel(open.cost_source, true)})`,
+                  ],
+                  ["Latency", `${open.latency_ms} ms`],
+                  ["Status", open.status],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex gap-2">
+                    <dt className="w-32 shrink-0 text-fg-subtle">{k}</dt>
+                    <dd className="font-mono text-xs text-fg">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              {open.has_content && (
+                <StoredContentView content={content} error={contentErr} usageId={open.id} />
+              )}
+              {/* The old LOG_BODIES previews: only shown when one actually exists (the flag is off in production,
+                  so these used to be two permanent "not stored" boxes under the real stored content). */}
+              {(open.prompt_preview != null || open.response_preview != null) && (
+                <div className="mt-4 space-y-3" data-testid="legacy-previews">
+                  {open.prompt_preview != null && (
+                    <div>
+                      <div className="text-xs font-medium text-fg-subtle">Prompt preview</div>
+                      <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
+                        {open.prompt_preview}
+                      </pre>
+                    </div>
+                  )}
+                  {open.response_preview != null && (
+                    <div>
+                      <div className="text-xs font-medium text-fg-subtle">Response preview</div>
+                      <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
+                        {open.response_preview}
+                      </pre>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </dl>
-            {open.has_content && (
-              <StoredContentView content={content} error={contentErr} usageId={open.id} />
-            )}
-            {/* The old LOG_BODIES previews: only shown when one actually exists (the flag is off in production,
-                so these used to be two permanent "not stored" boxes under the real stored content). */}
-            {(open.prompt_preview != null || open.response_preview != null) && (
-              <div className="mt-4 space-y-3" data-testid="legacy-previews">
-                {open.prompt_preview != null && (
-                  <div>
-                    <div className="text-xs font-medium text-fg-subtle">Prompt preview</div>
-                    <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
-                      {open.prompt_preview}
-                    </pre>
-                  </div>
-                )}
-                {open.response_preview != null && (
-                  <div>
-                    <div className="text-xs font-medium text-fg-subtle">Response preview</div>
-                    <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-2 text-xs text-fg">
-                      {open.response_preview}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-            {!open.has_content && open.prompt_preview == null && open.response_preview == null && (
-              <p className="mt-4 text-xs text-fg-subtle" data-testid="nothing-stored">
-                No prompt or response was stored for this request.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
+              )}
+              {!open.has_content && open.prompt_preview == null && open.response_preview == null && (
+                <p className="mt-4 text-xs text-fg-subtle" data-testid="nothing-stored">
+                  No prompt or response was stored for this request.
+                </p>
+              )}
+
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }
@@ -377,7 +400,7 @@ function ImageThumb({ usageId, img }: { usageId: number; img: StoredImage }) {
     <a href={url} target="_blank" rel="noopener noreferrer" title={`${img.mime}, ${Math.ceil(img.bytes / 1024)} KB`}>
       {/* The <img> is always laid out (a display:none image is never fetched by the browser); the pulse
           placeholder just sits behind it until it has loaded. */}
-      <span className={"relative inline-block rounded " + (loaded ? "" : "min-h-24 min-w-24 animate-pulse bg-fill")}>
+      <span className={"relative inline-block rounded " + (loaded ? "" : "min-h-24 min-w-24 animate-pulse bg-fill motion-reduce:animate-none")}>
         <img
           src={url}
           alt={`${img.role} image ${img.position + 1}`}
