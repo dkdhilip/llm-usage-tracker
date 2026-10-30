@@ -47,3 +47,13 @@ export const RANGE_OPTIONS = [
   { label: "30d", value: 30 },
   { label: "All", value: 0 },
 ];
+
+const shortDate = (iso: string) =>
+  new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/** The time range in words, for the page's context line ("Last 30 days", "Oct 9 – Oct 30", "All time"). */
+export function describeRange(f: Filters): string {
+  if (f.start) return `${shortDate(f.start)} – ${f.end ? shortDate(f.end) : "today"}`;
+  if (f.rangeDays > 0) return `Last ${f.rangeDays} days`;
+  return "All time";
+}

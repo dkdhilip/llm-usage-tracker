@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SummaryCards } from "./SummaryCards";
 import { KeyUsageTable } from "./KeyUsageTable";
 import { UsageOverTimeChart, buildDaily, overTimeSummary } from "./UsageOverTimeChart";
-import { UsageByModelChart, modelsSummary } from "./UsageByModelChart";
-import { UsageByProviderChart, providerShareSummary } from "./UsageByProviderChart";
+import { UsageByModelChart } from "./UsageByModelChart";
+import { UsageByProviderChart } from "./UsageByProviderChart";
 import type { ByKeyRow, ByModelRow, TimeseriesPoint, UsageSummary } from "../lib/api";
 import { ThemeProvider } from "../lib/theme";
 
@@ -46,7 +46,7 @@ const ROW = (key_id: number, label: string, cost: number, unpriced?: number): By
 
 describe("Per-key usage cost column", () => {
   const cells = () =>
-    within(screen.getByRole("table")).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[4].textContent);
+    within(screen.getByRole("table")).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[3].textContent);
 
   it("tells no price, free, partly priced and priced apart, and never shows $0.000000", () => {
     render(
@@ -123,21 +123,28 @@ describe("charts have text alternatives", () => {
     expect(label).toContain("By provider: OpenAI 13.");
   });
 
-  it("describes the ring and the model bars in words", () => {
-    expect(providerShareSummary([{ provider: "openai", value: 750 }, { provider: "gemini", value: 250 }], 1000)).toBe(
-      "Share of 1.0K tokens by provider: OpenAI 75% (750), Gemini 25% (250).",
-    );
-    const rows = Array.from({ length: 10 }, (_, i) => ({ name: `m${i}`, tokens: 1000 - i }));
-    expect(modelsSummary(rows)).toMatch(/^Tokens by model, most first: m0 1\.0K, .* m7 993, and 2 more\.$/);
-    expect(modelsSummary([])).toBe("No usage in this range yet.");
-    expect(providerShareSummary([], 0)).toBe("No usage in this range yet.");
+  it("the provider share and the model bars are lists of text, so nothing is only a drawing", () => {
+    const models = [
+      { provider: "openai", model: "gpt-4o-mini", requests: 1, total_tokens: 750, cost: 0 },
+      { provider: "gemini", model: "gemini-3.8-flash", requests: 1, total_tokens: 250, cost: 0 },
+    ];
+    render(<ThemeProvider><UsageByProviderChart data={models} /><UsageByModelChart data={models} /></ThemeProvider>);
+    const share = within(screen.getByRole("list", { name: "Provider share of tokens" })).getAllByRole("listitem");
+    expect(share.map((i) => i.textContent)).toEqual(["OpenAI75075%", "Gemini25025%"]);
+    const bars = within(screen.getByRole("list", { name: "Tokens by model, most first" })).getAllByRole("listitem");
+    expect(bars[0].textContent).toContain("OpenAI: gpt-4o-mini"); // the provider is named in text, not only by colour
+    expect(bars[0].textContent).toContain("750");
   });
 
-  it("the ring and the model chart expose their summary as an image name", () => {
-    const models = [{ provider: "openai", model: "gpt-4o-mini", requests: 1, total_tokens: 500, cost: 0 }];
-    render(<ThemeProvider><UsageByProviderChart data={models} /><UsageByModelChart data={models} /></ThemeProvider>);
-    const names = screen.getAllByRole("img").map((i) => i.getAttribute("aria-label"));
-    expect(names.some((n) => n?.startsWith("Share of 500 tokens by provider"))).toBe(true);
-    expect(names.some((n) => n?.startsWith("Tokens by model, most first: gpt-4o-mini"))).toBe(true);
+  it("shows the top 8 models and the rest on request", async () => {
+    const models = Array.from({ length: 10 }, (_, i) => ({
+      provider: "openai", model: `m${i}`, requests: 1, total_tokens: 1000 - i, cost: 0,
+    }));
+    render(<ThemeProvider><UsageByModelChart data={models} /></ThemeProvider>);
+    const list = () => within(screen.getByRole("list", { name: "Tokens by model, most first" })).getAllByRole("listitem");
+    expect(list()).toHaveLength(8);
+    await userEvent.click(screen.getByRole("button", { name: "Show all 10 models" }));
+    expect(list()).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Show top 8" })).toHaveAttribute("aria-expanded", "true");
   });
 });

@@ -88,7 +88,7 @@ const ROW = (key_id: number, label: string): ByKeyRow => ({
 describe("KeyUsageTable status filter", () => {
   const status = (id: number): KeyStatus => KEYS.find((k) => k.key_id === id)!.status;
   const table = () => render(<KeyUsageTable rows={[ROW(1, "sam-anthropic"), ROW(2, "old-key"), ROW(3, "gone-key")]} statusOf={status} />);
-  const labels = () => within(screen.getByRole("table")).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[0].textContent);
+  const labels = () => within(screen.getByRole("table")).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[0].textContent!.replace("vk_abc…", "")); // the cell also holds the key prefix
 
   it("shows only active keys by default, with Active ticked", () => {
     table();

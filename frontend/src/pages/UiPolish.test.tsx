@@ -151,7 +151,7 @@ describe("Usage by provider chart", () => {
   const renderChart = (data: ByModelRow[]) =>
     render(<ThemeProvider><UsageByProviderChart data={data} /></ThemeProvider>);
 
-  it("lists every provider in a legend with tokens and share, largest first (no labels on the ring to collide)", () => {
+  it("lists every provider with a bar, its tokens and its share, largest first (the names are text, so they cannot collide)", () => {
     renderChart([model("openrouter", 1_000_000), model("anthropic", 3000), model("openai", 2000), model("gemini", 0)]);
     const items = screen.getAllByRole("listitem");
     expect(items.map((i) => i.getAttribute("data-testid"))).toEqual(["provider-openrouter", "provider-anthropic", "provider-openai"]); // gemini has no usage

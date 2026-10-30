@@ -9,10 +9,13 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { keyOptions, type KeyOption } from "../lib/keyOptions";
-import { defaultFilters, toQuery, type Filters } from "../lib/filters";
+import { defaultFilters, describeRange, toQuery, type Filters } from "../lib/filters";
+import { num } from "../lib/format";
 import { FilterBar } from "../components/FilterBar";
 import { Button } from "../components/ui/Button";
 import { InlineAlert } from "../components/ui/InlineAlert";
+import { PageHeader } from "../components/ui/PageHeader";
+import { RefreshIcon } from "../components/ui/icons";
 import type { PanelStatus } from "../components/ui/PanelState";
 import { SummaryCards } from "../components/SummaryCards";
 import { UsageOverTimeChart } from "../components/UsageOverTimeChart";
@@ -30,6 +33,7 @@ export function Dashboard() {
   const [byModel, setByModel] = useState<ByModelRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     api.models().then(setModels).catch(() => setModels([]));
@@ -50,6 +54,7 @@ export function Dashboard() {
         setTimeseries(ts);
         setByKey(bk);
         setByModel(bm);
+        setUpdatedAt(new Date());
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -74,26 +79,35 @@ export function Dashboard() {
   // failed load says so: it never shows "No usage", which would mean "loaded, and there is none".
   const state: PanelStatus = error ? "error" : loading && !summary ? "loading" : "ready";
 
-  const scopeLabel = isWorkspaceAdmin
-    ? `workspace: ${workspace?.name ?? ""}`
-    : "your assigned keys";
+  const scope = isWorkspaceAdmin ? (workspace?.name ?? "Workspace") : "Your assigned keys";
+  const context = [
+    scope,
+    describeRange(filters),
+    summary && !error ? `${num(summary.total_requests)} request${summary.total_requests === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-fg">
-            {isWorkspaceAdmin ? "Workspace LLM usage" : "LLM usage"}
-          </h1>
-          <div className="text-xs text-fg-subtle">Showing: {scopeLabel}</div>
-        </div>
-        <button
-          onClick={load}
-          className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-fg-muted hover:bg-fill"
-        >
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        className="mb-0"
+        title="Usage"
+        description={context}
+        actions={
+          <>
+            {updatedAt && !error && (
+              <span className="text-ui text-fg-muted">
+                Updated {updatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </span>
+            )}
+            {/* aria-disabled, not disabled: a focused button that turns disabled would drop the keyboard user's place */}
+            <Button onClick={() => !loading && load()} aria-disabled={loading || undefined} aria-busy={loading}>
+              <RefreshIcon aria-hidden="true" /> {loading ? "Refreshing…" : "Refresh"}
+            </Button>
+          </>
+        }
+      />
 
       <FilterBar filters={filters} onChange={setFilters} models={models} keys={allKeys} />
 

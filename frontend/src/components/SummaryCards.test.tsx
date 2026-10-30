@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { SummaryCards } from "./SummaryCards";
+import { SummaryCards, successRate } from "./SummaryCards";
 import type { UsageSummary } from "../lib/api";
 
 const base: UsageSummary = {
@@ -27,7 +27,7 @@ describe("SummaryCards", () => {
 
   it("renders totals and the estimated-only cost hint", () => {
     render(<SummaryCards data={base} loading={false} />);
-    expect(screen.getByText("Total Requests")).toBeInTheDocument();
+    expect(screen.getByText("Requests")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText(/estimated from configured pricing/i)).toBeInTheDocument();
   });
@@ -38,5 +38,42 @@ describe("SummaryCards", () => {
     );
     expect(screen.getByText(/actual/i)).toBeInTheDocument();
     expect(screen.getByText(/est\./i)).toBeInTheDocument();
+  });
+});
+
+describe("SummaryCards: cost leads, and says what it does not know", () => {
+  it("puts the cost first, labelled as an estimate unless real spend exists", () => {
+    const { rerender } = render(<SummaryCards data={base} loading={false} />);
+    expect(screen.getAllByText(/^(Estimated cost|Requests|Tokens|Active keys)$/).map((e) => e.textContent)).toEqual([
+      "Estimated cost", "Requests", "Tokens", "Active keys",
+    ]);
+    rerender(<SummaryCards data={{ ...base, cost_actual: 0.004 }} loading={false} />);
+    expect(screen.getByText("Cost")).toBeInTheDocument();
+  });
+
+  it("warns that the real total is higher when some requests have no price", () => {
+    render(<SummaryCards data={{ ...base, unpriced_requests: 5 }} loading={false} />);
+    expect(screen.getByText("5 requests have no price yet, so the real total is higher")).toBeInTheDocument();
+  });
+
+  it("shows the errors and the success rate on the Requests card", () => {
+    render(<SummaryCards data={{ ...base, total_requests: 477, errors: 2 }} loading={false} />);
+    expect(screen.getByText("2 errors · 99.5% success")).toBeInTheDocument();
+  });
+
+  it("says there were no errors rather than printing nothing", () => {
+    render(<SummaryCards data={base} loading={false} />);
+    expect(screen.getByText("No errors")).toBeInTheDocument();
+  });
+
+  it("never rounds the success rate up to 100% while a request failed", () => {
+    expect(successRate(10_000, 1)).toBe("99.9%");
+    expect(successRate(10, 0)).toBe("100.0%");
+    expect(successRate(0, 0)).toBe("—");
+  });
+
+  it("shows dashes, never zeros, when the data failed to load", () => {
+    render(<SummaryCards data={null} loading={false} error />);
+    expect(screen.getAllByText("—")).toHaveLength(4);
   });
 });
