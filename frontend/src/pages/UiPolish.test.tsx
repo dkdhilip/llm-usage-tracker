@@ -56,7 +56,7 @@ async function openRow(r: RequestRow, content?: RequestContent) {
   const user = userEvent.setup();
   render(<MemoryRouter><Requests /></MemoryRouter>);
   await user.click(await screen.findByText("team-key"));
-  await screen.findByText("Request detail");
+  await screen.findByText("Request inspector");
 }
 
 describe("Requests detail panel", () => {
