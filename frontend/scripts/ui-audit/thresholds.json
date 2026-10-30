@@ -1,20 +1,20 @@
 {
-  "_comment": "Regression gate for scripts/ui-audit/check.mjs. Baseline measured on main at 5d6b6d0, tightened after phase 2. Tighten these as phases land; never loosen them.",
+  "_comment": "Regression gate for scripts/ui-audit/check.mjs. Baseline measured on main at 5d6b6d0, tightened through phase 7: every target is at least 24px. Tighten these as phases land; never loosen them.",
   "maxOverflowPx": 0,
   "maxAxeViolationNodes": 0,
   "maxUnnamedControls": 0,
   "minControlBorderContrast": 3,
   "maxSmallTargets": {
-    "default": 3,
-    "login": 1,
+    "default": 0,
+    "login": 0,
     "welcome": 0,
-    "dashboard": 1,
+    "dashboard": 0,
     "requests": 0,
     "playground": 0,
     "workspace": 0,
     "account": 0,
-    "member-dashboard": 1,
-    "empty-dashboard": 1
+    "member-dashboard": 0,
+    "empty-dashboard": 0
   },
   "requiredChecks": [
     "keyboardTabStops",

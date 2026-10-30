@@ -65,7 +65,7 @@ describe("Workspace tabs", () => {
   it("opens on Keys, with the other sections one tab away and counts on the tabs", async () => {
     page();
     const tabs = await screen.findByRole("tablist", { name: "Workspace sections" });
-    expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Keys2", "Providers", "Team1", "Settings"]);
+    expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Keys2", "Providers", "Team2", "Settings"]);
     expect(within(tabs).getByRole("tab", { name: /^Keys/ })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("prod-openai")).toBeInTheDocument();
     expect(screen.queryByText("Provider keys")).toBeNull(); // only the open section is in the page

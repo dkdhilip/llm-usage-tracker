@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { api, type WorkspaceDetail } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/Card";
+import { Field, Input } from "../../components/ui/Field";
+import { InlineAlert } from "../../components/ui/InlineAlert";
 import { useConfirmDialog } from "../../components/ui/useConfirmDialog";
 
 // ---------- settings ----------
@@ -15,18 +18,12 @@ export function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: 
   return (
     <Card title="Workspace settings">
       {dialog}
-      <div className="space-y-3 text-sm">
+      <div className="space-y-5">
         <div className="flex items-end gap-2">
-          <label className="flex-1 text-xs font-medium text-fg-muted">
-            Name
-            <input
-              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm"
-              value={name}
-              maxLength={80}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <button
+          <Field label="Name" className="flex-1">
+            {(c) => <Input {...c} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />}
+          </Field>
+          <Button
             onClick={async () => {
               setBusy("rename");
               setErr(null);
@@ -41,17 +38,17 @@ export function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: 
               }
             }}
             disabled={busy !== null || !name.trim() || name.trim() === ws.name}
-            className="rounded-md border border-line px-3 py-1.5 text-sm text-fg-muted hover:bg-fill disabled:opacity-50"
           >
             Rename
-          </button>
+          </Button>
         </div>
-        <div className="border-t border-line pt-3">
-          <p className="mb-2 text-xs text-fg-muted">
-            Deleting the workspace removes all its virtual keys, usage, and provider keys.
-            Remove every other member first.
+        <div className="border-t border-line pt-4">
+          <h3 className="text-sm font-semibold text-danger-fg">Delete workspace</h3>
+          <p className="mb-3 mt-1 text-sm text-fg-muted">
+            Deleting the workspace removes all its virtual keys, usage, and provider keys. Remove every other member first.
           </p>
-          <button
+          <Button
+            variant="danger"
             onClick={async () => {
               const ok = await confirm({
                 title: `Delete ${ws.name}?`,
@@ -71,12 +68,11 @@ export function SettingsCard({ ws, onChange }: { ws: WorkspaceDetail; onChange: 
               }
             }}
             disabled={busy !== null}
-            className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
           >
             {busy === "delete" ? "Deleting…" : "Delete workspace"}
-          </button>
+          </Button>
         </div>
-        {err && <div className="text-xs text-red-600 dark:text-red-400">{err}</div>}
+        {err && <InlineAlert tone="error">{err}</InlineAlert>}
       </div>
     </Card>
   );

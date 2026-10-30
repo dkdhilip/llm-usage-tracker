@@ -2,21 +2,30 @@ import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./lib/auth";
-import { Dashboard } from "./pages/Dashboard";
-import { Playground } from "./pages/Playground";
-import { Requests } from "./pages/Requests";
-import { Workspace } from "./pages/Workspace";
-import { Account } from "./pages/Account";
-import { Onboarding } from "./pages/Onboarding";
 import { Login } from "./pages/Login";
 import { Button } from "./components/ui/Button";
 import { InlineAlert } from "./components/ui/InlineAlert";
+
+// Each page is loaded when it is first visited, so the first screen (sign in) does not carry the charts, the request
+// inspector or the workspace tools. Pages are named exports, hence the small adapter.
+const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+const Dashboard = page(() => import("./pages/Dashboard"), "Dashboard");
+const Requests = page(() => import("./pages/Requests"), "Requests");
+const Playground = page(() => import("./pages/Playground"), "Playground");
+const Workspace = page(() => import("./pages/Workspace"), "Workspace");
+const Account = page(() => import("./pages/Account"), "Account");
+const Onboarding = page(() => import("./pages/Onboarding"), "Onboarding");
 
 // The design-system preview exists only in builds made with VITE_STYLEGUIDE=1; it is dropped from every other build.
 const StyleGuide = import.meta.env.VITE_STYLEGUIDE === "1" ? lazy(() => import("./pages/StyleGuide").then((m) => ({ default: m.StyleGuide }))) : null;
 
 function Loading() {
-  return <div className="p-6 text-sm text-fg-subtle">Loading…</div>;
+  return (
+    <div role="status" className="p-6 text-sm text-fg-muted">
+      Loading…
+    </div>
+  );
 }
 
 /** Shown when the session could not be checked because the server is unreachable or failing. The visitor is not
@@ -74,6 +83,7 @@ export default function App() {
       {connectionError && !authenticated ? (
         <ConnectionProblem />
       ) : (
+      <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<Login />} />
@@ -144,6 +154,7 @@ export default function App() {
         <Route path="/admin" element={<Navigate to="/workspace" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      </Suspense>
       )}
     </Layout>
   );

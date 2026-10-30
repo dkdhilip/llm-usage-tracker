@@ -7,6 +7,8 @@ import {
   type IntegrationTarget,
 } from "../lib/api";
 import { IntegrationGuide, type GuideKey } from "./IntegrationGuide";
+import { buttonClass } from "./ui/Button";
+import { InlineAlert } from "./ui/InlineAlert";
 
 const ORDER: IntegrationProviderId[] = ["openai", "anthropic", "gemini"];
 
@@ -41,7 +43,7 @@ function CopyButton({ text }: { text: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="rounded border border-line px-2 py-1 min-h-7 text-[11px] text-fg-muted hover:bg-fill"
+      className={buttonClass("secondary", "sm")}
     >
       {copied ? "Copied" : "Copy"}
     </button>
@@ -112,7 +114,7 @@ export function ConnectPanel({
         In your app's <code className="font-mono text-fg">.env</code>, replace your real provider key with this virtual key
         and change the base URL to:
       </p>
-      {error && <div role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</div>}
+      {error && <InlineAlert tone="error">{error}</InlineAlert>}
 
       {shown.map((id) => {
         const p = guide?.providers.find((x) => x.provider === id);
@@ -134,7 +136,7 @@ export function ConnectPanel({
               <code>{text}</code>
             </pre>
             {id === "openai" && viaOpenRouter && (
-              <p className="mt-1 text-[11px] text-fg-subtle">
+              <p className="mt-1 text-xs text-fg-muted">
                 For OpenRouter, use model names like <code className="font-mono">openrouter/&lt;vendor&gt;/&lt;model&gt;</code>.
               </p>
             )}

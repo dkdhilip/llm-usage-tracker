@@ -85,7 +85,7 @@ const PAGES = [
   { name: "styleguide", user: null, path: "/styleguide", wait: "text=Design system" },
 ];
 const WIDTHS = QUICK ? [1440, 390] : [1440, 1024, 768, 390, 360];
-const DARK = new Set(["dashboard", "requests", "playground", "workspace", "styleguide"]);
+const DARK = new Set(["login", "welcome", "dashboard", "requests", "playground", "workspace", "account", "styleguide"]);
 
 const results = { matrix: {}, checks: {} };
 // ================= matrix: overflow, axe, targets, names, small type
@@ -275,7 +275,7 @@ await check("workspaceAccessible", async () => {
     v = await axeRun(page); out[`drawer-${w}-${theme}`] = { axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
     await ctx.close();
   }
-  const bad = Object.entries(out).filter(([, v]) => v.axe || v.unnamed || v.overflow > 0);
+  const bad = Object.entries(out).filter(([, v]) => v.axe || v.unnamed || v.small || v.overflow > 0);
   return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views, 0 violations` };
 });
 

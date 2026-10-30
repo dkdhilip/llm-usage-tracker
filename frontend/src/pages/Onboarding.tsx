@@ -2,7 +2,11 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { Button } from "../components/ui/Button";
 import { Card } from "../components/Card";
+import { Field, Input } from "../components/ui/Field";
+import { InlineAlert } from "../components/ui/InlineAlert";
+import { PageHeader } from "../components/ui/PageHeader";
 
 export function Onboarding() {
   const { inWorkspace, refresh } = useAuth();
@@ -29,83 +33,58 @@ export function Onboarding() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-lg font-semibold text-fg">Get started</h1>
-      <p className="mb-4 mt-1 text-sm text-fg-muted">
-        Create a workspace for your team, or join one you were invited to.
-      </p>
+      <PageHeader title="Get started" description="Create a workspace for your team, or join one you were invited to." />
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="Create a workspace">
-          <p className="mb-3 text-sm text-fg-muted">
-            You become the <strong>Workspace Admin</strong> — issue virtual keys, invite
-            Team Members, and see workspace-wide usage.
+          <p className="mb-4 text-sm text-fg-muted">
+            You become the <strong className="text-fg">Workspace Admin</strong> — issue virtual keys, invite Team Members, and
+            see workspace-wide usage.
           </p>
           <form
-            className="space-y-3"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void run("create", () => api.createWorkspace(name.trim()));
             }}
           >
-            <label className="block text-xs font-medium text-fg-muted">
-              Workspace name
-              <input
-                required
-                minLength={1}
-                maxLength={80}
-                className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
-                placeholder="Acme Inc"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={busy !== null || !name.trim()}
-              className="w-full rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-            >
+            <Field label="Workspace name">
+              {(c) => (
+                <Input {...c} required minLength={1} maxLength={80} className="h-10" placeholder="Acme Inc" value={name} onChange={(e) => setName(e.target.value)} />
+              )}
+            </Field>
+            <Button type="submit" variant="primary" size="lg" className="w-full" disabled={busy !== null || !name.trim()}>
               {busy === "create" ? "Creating…" : "Create workspace"}
-            </button>
+            </Button>
           </form>
         </Card>
 
         <Card title="Join a workspace">
-          <p className="mb-3 text-sm text-fg-muted">
-            Paste the invite code your Workspace Admin sent you. You join as a
-            <strong> Team Member</strong> and see only the keys assigned to you.
+          <p className="mb-4 text-sm text-fg-muted">
+            Paste the invite code your Workspace Admin sent you. You join as a <strong className="text-fg">Team Member</strong>{" "}
+            and see only the keys assigned to you.
           </p>
           <form
-            className="space-y-3"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void run("join", () => api.joinWorkspace(code.trim()));
             }}
           >
-            <label className="block text-xs font-medium text-fg-muted">
-              Invite code
-              <input
-                required
-                minLength={1}
-                maxLength={64}
-                className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
-                placeholder="paste code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={busy !== null || !code.trim()}
-              className="w-full rounded-md border border-line px-3 py-2 text-sm font-medium text-fg hover:bg-fill disabled:opacity-50"
-            >
+            <Field label="Invite code">
+              {(c) => (
+                <Input {...c} required minLength={1} maxLength={64} className="h-10 font-mono" placeholder="paste code" value={code} onChange={(e) => setCode(e.target.value)} />
+              )}
+            </Field>
+            <Button type="submit" size="lg" className="w-full" disabled={busy !== null || !code.trim()}>
               {busy === "join" ? "Joining…" : "Join workspace"}
-            </button>
+            </Button>
           </form>
         </Card>
       </div>
       {err && (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+        <InlineAlert tone="error" className="mt-4">
           {err}
-        </div>
+        </InlineAlert>
       )}
     </div>
   );

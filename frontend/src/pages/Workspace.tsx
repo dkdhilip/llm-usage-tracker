@@ -83,7 +83,7 @@ export function Workspace() {
             Keys
           </Tab>
           <Tab value="providers">Providers</Tab>
-          <Tab value="team" count={members.length || undefined}>
+          <Tab value="team" count={(ws?.members ?? []).length || undefined}>
             Team
           </Tab>
           <Tab value="settings">Settings</Tab>
