@@ -11,7 +11,10 @@ export function CreateKeyForm({
   members,
   masterText,
   masterImages,
+  framed = true,
 }: {
+  /** false when the form sits in a drawer that already has its own title and frame */
+  framed?: boolean;
   onCreated: () => void;
   configuredProviders: string[];
   members: { user_id: number; username: string }[];
@@ -84,8 +87,7 @@ export function CreateKeyForm({
     }
   }
 
-  return (
-    <Card title="Create a virtual key">
+  const body = (
       <div className="space-y-3">
         <input
           className="w-full rounded-md border border-line px-3 py-2 text-sm"
@@ -284,6 +286,6 @@ export function CreateKeyForm({
           />
         )}
       </div>
-    </Card>
   );
+  return framed ? <Card title="Create a virtual key">{body}</Card> : <div className="p-4">{body}</div>;
 }

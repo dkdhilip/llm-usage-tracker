@@ -59,7 +59,7 @@ describe("Workspace → Prompt & response logging", () => {
   it("shows it off by default, and turning it on needs an explicit confirmation", async () => {
     const user = userEvent.setup();
     vi.mocked(api.setContentLogging).mockResolvedValue(workspace(true));
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=settings"]}><Workspace /></MemoryRouter>);
     await screen.findByText("Prompt & response logging");
     expect(screen.getByText("Off")).toBeTruthy();
 
@@ -81,7 +81,7 @@ describe("Workspace → Prompt & response logging", () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace(true));
     vi.mocked(api.setContentLogging).mockResolvedValue(workspace(false));
     vi.mocked(api.deleteStoredContent).mockResolvedValue({ deleted: 3 });
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=settings"]}><Workspace /></MemoryRouter>);
     await screen.findByText("On");
 
     await user.click(screen.getByRole("button", { name: "Turn off" }));
@@ -150,7 +150,7 @@ describe("Workspace -> image storage", () => {
     const user = userEvent.setup();
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace(true, false, 12_500_000));
     vi.mocked(api.setImageLogging).mockResolvedValue(workspace(true, true, 12_500_000));
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=settings"]}><Workspace /></MemoryRouter>);
     await screen.findByText("Images off");
     expect(screen.getByTestId("image-logging").textContent).toContain("12.5 MB of 50 MB");
     const bar = screen.getByRole("progressbar", { name: "Image storage used" });
@@ -172,7 +172,7 @@ describe("Workspace -> image storage", () => {
 
   it("warns when the workspace limit is reached and when text logging is off", async () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace(false, true, 50_000_000));
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=settings"]}><Workspace /></MemoryRouter>);
     await screen.findByText("Images on");
     expect(screen.getByText(/image limit for this workspace is reached/)).toBeTruthy();
     expect(screen.getByText(/text logging is currently off/)).toBeTruthy();

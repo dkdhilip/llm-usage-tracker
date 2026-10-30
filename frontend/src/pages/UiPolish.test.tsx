@@ -105,7 +105,7 @@ describe("Workspace provider keys", () => {
     vi.mocked(api.getWorkspace).mockResolvedValueOnce(ws("workspace")).mockResolvedValue(ws("none"));
     vi.mocked(api.clearWorkspaceProviderKey).mockResolvedValue({} as never);
     const user = userEvent.setup();
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=providers"]}><Workspace /></MemoryRouter>);
     await screen.findByText("saved ····1234");
     expect(screen.queryByPlaceholderText("paste openai key")).toBeNull(); // a saved key: no entry field yet
 
@@ -118,7 +118,7 @@ describe("Workspace provider keys", () => {
 
   it("no longer shows the Model pricing card (the built-in catalog covers the current models)", async () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(ws("workspace"));
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=providers"]}><Workspace /></MemoryRouter>);
     await screen.findByText("saved ····1234");
     expect(screen.queryByText(/Model pricing/)).toBeNull();
     expect(screen.queryByText("Add pricing")).toBeNull();
@@ -128,7 +128,7 @@ describe("Workspace provider keys", () => {
   it("keeps 'replace' working: the field opens, and cancel closes it again", async () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(ws("workspace"));
     const user = userEvent.setup();
-    render(<MemoryRouter><Workspace /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/workspace?tab=providers"]}><Workspace /></MemoryRouter>);
     await screen.findByText("saved ····1234");
     await user.click(screen.getByRole("button", { name: /^Replace .+ key$/ }));
     expect(screen.getByPlaceholderText("paste openai key")).toBeTruthy();

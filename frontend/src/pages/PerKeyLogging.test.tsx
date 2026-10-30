@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Workspace } from "./Workspace";
 import { api, type IntegrationGuideData, type KeyRow } from "../lib/api";
+import { chooseKeyAction } from "../test/workspaceHelpers";
 
 vi.mock("../lib/auth", () => ({
   useAuth: () => ({ isWorkspaceAdmin: true, loading: false, logout: vi.fn(), refresh: vi.fn() }),
@@ -55,8 +56,8 @@ function guide(): IntegrationGuideData {
   };
 }
 
-function page() {
-  return render(<MemoryRouter><Workspace /></MemoryRouter>);
+function page(url = "/workspace") {
+  return render(<MemoryRouter initialEntries={[url]}><Workspace /></MemoryRouter>);
 }
 
 const KEYS = [
@@ -99,7 +100,7 @@ describe("Workspace -> per-key logging", () => {
   });
 
   it("describes the master switch and how many keys are logging", async () => {
-    page();
+    page("/workspace?tab=settings");
     const summary = await screen.findByTestId("keys-logging-summary");
     expect(summary.textContent).toMatch(/workspace master switch/);
     expect(summary.textContent).toMatch(/1 of 4 keys/);
@@ -108,7 +109,8 @@ describe("Workspace -> per-key logging", () => {
   it("opens an editor per key; turning text logging on needs a confirmation that names the key", async () => {
     const user = userEvent.setup();
     page();
-    await user.click(within(await rowOf("off-key")).getByRole("button", { name: "Logging" }));
+    await rowOf("off-key");
+    await chooseKeyAction(user, "off-key", "Logging settings");
     const editor = await screen.findByTestId("key-logging-editor-1");
     expect(editor.textContent).toContain("off-key (vk_abcdefgh…)"); // label + prefix only, never a secret
     const [textBox, imageBox] = within(editor).getAllByRole("checkbox") as HTMLInputElement[];
@@ -129,7 +131,8 @@ describe("Workspace -> per-key logging", () => {
   it("turning text off also turns images off and needs no confirmation; images have their own confirmation", async () => {
     const user = userEvent.setup();
     page();
-    await user.click(within(await rowOf("image-key")).getByRole("button", { name: "Logging" }));
+    await rowOf("image-key");
+    await chooseKeyAction(user, "image-key", "Logging settings");
     const editor = await screen.findByTestId("key-logging-editor-3");
     const [textBox] = within(editor).getAllByRole("checkbox") as HTMLInputElement[];
     await user.click(textBox);
@@ -138,7 +141,8 @@ describe("Workspace -> per-key logging", () => {
     );
     expect(screen.queryByRole("alertdialog")).toBeNull(); // turning text off asks nothing
 
-    await user.click(within(await rowOf("text-key")).getByRole("button", { name: "Logging" }));
+    await rowOf("text-key");
+    await chooseKeyAction(user, "text-key", "Logging settings");
     const ed2 = await screen.findByTestId("key-logging-editor-2");
     const imageBox = within(ed2).getAllByRole("checkbox")[1] as HTMLInputElement;
     expect(imageBox.disabled).toBe(false);
@@ -153,7 +157,8 @@ describe("Workspace -> per-key logging", () => {
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace({ text: false, images: false }));
     const user = userEvent.setup();
     page();
-    await user.click(within(await rowOf("text-key")).getByRole("button", { name: "Logging" }));
+    await rowOf("text-key");
+    await chooseKeyAction(user, "text-key", "Logging settings");
     const editor = await screen.findByTestId("key-logging-editor-2");
     expect(editor.textContent).toMatch(/Prompt & response logging is off, so nothing is logged for this key yet/);
     expect(editor.textContent).toMatch(/stops new capture only/);
@@ -163,7 +168,8 @@ describe("Workspace -> per-key logging", () => {
     vi.mocked(api.updateKey).mockRejectedValue(new Error("forbidden"));
     const user = userEvent.setup();
     page();
-    await user.click(within(await rowOf("off-key")).getByRole("button", { name: "Logging" }));
+    await rowOf("off-key");
+    await chooseKeyAction(user, "off-key", "Logging settings");
     const editor = await screen.findByTestId("key-logging-editor-1");
     await user.click(within(editor).getAllByRole("checkbox")[0]);
     await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Turn on" }));
@@ -173,15 +179,19 @@ describe("Workspace -> per-key logging", () => {
   it("does not offer logging controls for a revoked key", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([key({ id: 9, label: "gone", revoked_at: "2026-09-01T00:00:00Z", content_logging_enabled: true })]);
     page();
-    await userEvent.setup().click(await screen.findByRole("button", { name: /Show revoked keys/ })); // hidden by default
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("checkbox", { name: "Revoked" })); // hidden by default
     const row = await rowOf("gone");
-    expect(within(row).queryByRole("button", { name: "Logging" })).toBeNull();
+    await user.click(within(row).getByRole("button", { name: "More actions for gone" }));
+    expect(screen.queryByRole("menuitem", { name: "Logging settings" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Delete key" })).toBeTruthy();
   });
 });
 
 describe("Workspace -> creating a key with logging", () => {
   async function fillAndOpen(user: ReturnType<typeof userEvent.setup>) {
     page();
+    await user.click(await screen.findByRole("button", { name: "Create key" })); // opens the drawer
     await user.type(await screen.findByPlaceholderText(/Label/), "new-key");
     return screen.getByTestId("create-key-logging");
   }

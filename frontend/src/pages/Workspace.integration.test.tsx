@@ -95,7 +95,7 @@ describe("Workspace → Connect your app", () => {
     const user = userEvent.setup();
     renderPage();
     const row = (await screen.findByText("team-key")).closest("tr")!;
-    await user.click(await screen.findByRole("button", { name: /Show revoked keys/ })); // revoked keys are hidden by default
+    await user.click(await screen.findByRole("checkbox", { name: "Revoked" })); // revoked keys are hidden by default
     expect(within((await screen.findByText("old-key")).closest("tr")!).queryByRole("button", { name: "Connect" })).toBeNull(); // revoked
 
     expect(screen.queryByRole("region", { name: "Connect your app" })).toBeNull();
@@ -130,6 +130,7 @@ describe("Workspace → Connect your app", () => {
   it("shows the guide right under a newly created key — and the secret appears ONLY in the one-time box", async () => {
     const user = userEvent.setup();
     renderPage();
+    await user.click(await screen.findByRole("button", { name: "Create key" })); // opens the drawer
     await user.type(await screen.findByPlaceholderText(/Label — e\.g\./), "dev-key");
     await user.click(screen.getByRole("button", { name: "Create key" }));
 
@@ -154,6 +155,7 @@ describe("Workspace → Connect your app", () => {
   it("starts the guide afresh for each newly created key (its first enabled provider, not the previous key's tab)", async () => {
     const user = userEvent.setup();
     renderPage();
+    await user.click(await screen.findByRole("button", { name: "Create key" })); // opens the drawer
     await user.type(await screen.findByPlaceholderText(/Label — e\.g\./), "first");
     await user.click(screen.getByRole("button", { name: "Create key" }));
     let region = await screen.findByRole("region", { name: "Connect your app" });

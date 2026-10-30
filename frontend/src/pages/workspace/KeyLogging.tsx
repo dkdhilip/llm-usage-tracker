@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Badge } from "../../components/ui/Badge";
 import { api, type KeyRow } from "../../lib/api";
 import { useConfirmDialog } from "../../components/ui/useConfirmDialog";
 
@@ -14,16 +15,11 @@ export function KeyLoggingPill({
 }) {
   const text = !!k.content_logging_enabled;
   const images = text && !!k.image_logging_enabled;
-  if (!text) return <span className="text-xs text-fg-subtle">Off</span>;
+  if (!text) return <span className="text-fg-muted">Off</span>;
   const inactive = masterText === false || (images && masterImages === false);
   return (
-    <span
-      className={
-        "rounded-full px-2 py-0.5 text-[11px] font-medium " +
-        (inactive
-          ? "bg-fill text-fg-muted"
-          : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300")
-      }
+    <Badge
+      variant={inactive ? "neutral" : "brand"}
       title={
         inactive
           ? "This key's switch is on, but a workspace master switch is off, so nothing is being logged yet."
@@ -32,7 +28,7 @@ export function KeyLoggingPill({
     >
       {images ? "Text + images" : "Text"}
       {inactive ? " (inactive)" : ""}
-    </span>
+    </Badge>
   );
 }
 

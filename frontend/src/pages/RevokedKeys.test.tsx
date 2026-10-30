@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,57 +41,60 @@ beforeEach(() => {
   ]);
 });
 
+const table = () => within(screen.getByRole("table"));
+const revokedBox = () => screen.getByRole("checkbox", { name: "Revoked" });
+
 describe("Workspace -> revoked keys", () => {
-  it("hides revoked keys by default, counts only the active ones, and says how many are tucked away", async () => {
+  it("hides revoked keys by default and says how many keys there are of each kind", async () => {
     page();
     await screen.findByText("active-one");
     expect(screen.getByText("active-two")).toBeTruthy();
     expect(screen.queryByText("old-a")).toBeNull();
     expect(screen.queryByText("old-b")).toBeNull();
-    expect(screen.getByText("Virtual keys (2)")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show revoked keys (2)" })).toBeTruthy();
+    expect(screen.getByText("2 active · 2 revoked")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Active" })).toBeChecked();
+    expect(revokedBox()).not.toBeChecked();
   });
 
-  it("shows them on request, marked revoked, and hides them again", async () => {
+  it("shows them when Revoked is ticked, marked revoked, and hides them again", async () => {
     const user = userEvent.setup();
     page();
-    await user.click(await screen.findByRole("button", { name: "Show revoked keys (2)" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Revoked" }));
     expect(await screen.findByText("old-a")).toBeTruthy();
     expect(screen.getByText("old-b")).toBeTruthy();
-    expect(screen.getAllByText("revoked")).toHaveLength(2);
-    expect(screen.getByText("Virtual keys (2)")).toBeTruthy(); // the title still counts active keys
-    await user.click(screen.getByRole("button", { name: "Hide revoked keys (2)" }));
+    expect(table().getAllByText("Revoked")).toHaveLength(2);
+    expect(screen.getByText("2 active · 2 revoked")).toBeTruthy(); // the counts do not change with the filter
+    await user.click(revokedBox());
     expect(screen.queryByText("old-a")).toBeNull();
   });
 
   it("remembers the choice in this browser", async () => {
     const user = userEvent.setup();
     const { unmount } = page();
-    await user.click(await screen.findByRole("button", { name: "Show revoked keys (2)" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Revoked" }));
     unmount();
     page();
     expect(await screen.findByText("old-a")).toBeTruthy(); // still shown after a reload
-    expect(screen.getByRole("button", { name: "Hide revoked keys (2)" })).toBeTruthy();
+    expect(revokedBox()).toBeChecked();
   });
 
-  it("has no toggle when nothing is revoked", async () => {
+  it("does not mention revoked keys when nothing is revoked", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([key({ id: 1, label: "only" })]);
     page();
     await screen.findByText("only");
-    expect(screen.queryByRole("button", { name: /revoked keys/ })).toBeNull();
+    expect(screen.getByText("1 active")).toBeTruthy();
   });
 
-  it("explains an empty list when every key is revoked", async () => {
+  it("explains an empty list when every key is revoked, and where they are", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([key({ id: 3, label: "old-a", revoked_at: REVOKED })]);
     page();
-    expect(await screen.findByText(/No active keys/)).toBeTruthy();
-    expect(screen.getByText("Virtual keys (0)")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show revoked keys (1)" })).toBeTruthy();
+    expect(await screen.findByText(/No keys with these statuses/)).toBeTruthy();
+    expect(screen.getByText("0 active · 1 revoked")).toBeTruthy();
   });
 
   it("still shows the usual empty message when there are no keys at all", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([]);
     page();
-    expect(await screen.findByText("No keys yet — create one above.")).toBeTruthy();
+    expect(await screen.findByText("No keys yet. Create one to get started.")).toBeTruthy();
   });
 });

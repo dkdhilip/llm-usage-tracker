@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Workspace } from "./Workspace";
 import { api, type KeyRow } from "../lib/api";
+import { chooseKeyAction, keyRow } from "../test/workspaceHelpers";
 
 vi.mock("../lib/auth", () => ({
   useAuth: () => ({ isWorkspaceAdmin: true, loading: false, logout: vi.fn(), refresh: vi.fn() }),
@@ -44,12 +45,15 @@ beforeEach(() => {
   ]);
 });
 
+const revokedBox = () => screen.getByRole("checkbox", { name: "Revoked" });
+const deletedBox = () => screen.getByRole("checkbox", { name: "Deleted" });
+
 describe("Workspace -> red confirmation before revoke / delete", () => {
   it("revoke asks first in a red box naming the key, and does nothing on Cancel", async () => {
     const user = userEvent.setup();
     page();
     await screen.findByText("active-one");
-    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    await chooseKeyAction(user, "active-one", "Revoke key");
     const box = screen.getByRole("alertdialog");
     expect(within(box).getByText("Revoke this key?")).toBeTruthy();
     expect(within(box).getByText("active-one")).toBeTruthy();
@@ -63,7 +67,8 @@ describe("Workspace -> red confirmation before revoke / delete", () => {
   it("Escape also cancels", async () => {
     const user = userEvent.setup();
     page();
-    await user.click(await screen.findByRole("button", { name: "Revoke" }));
+    await screen.findByText("active-one");
+    await chooseKeyAction(user, "active-one", "Revoke key");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(api.revokeKey).not.toHaveBeenCalled();
@@ -73,7 +78,8 @@ describe("Workspace -> red confirmation before revoke / delete", () => {
     const user = userEvent.setup();
     vi.mocked(api.revokeKey).mockResolvedValue({ id: 1, revoked_at: WHEN });
     page();
-    await user.click(await screen.findByRole("button", { name: "Revoke" }));
+    await screen.findByText("active-one");
+    await chooseKeyAction(user, "active-one", "Revoke key");
     const calls = vi.mocked(api.listKeys).mock.calls.length;
     await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Revoke key" }));
     expect(api.revokeKey).toHaveBeenCalledWith(1);
@@ -84,10 +90,12 @@ describe("Workspace -> red confirmation before revoke / delete", () => {
   it("only revoked keys offer Delete, and it asks in a red box that says the history is kept", async () => {
     const user = userEvent.setup();
     page();
-    await user.click(await screen.findByRole("button", { name: "Show revoked keys (1)" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Revoked" }));
     await screen.findByText("old-a");
-    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(1); // not on the active key
-    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(within(keyRow("active-one")).getByRole("button", { name: "More actions for active-one" }));
+    expect(screen.queryByRole("menuitem", { name: "Delete key" })).toBeNull(); // not on the active key
+    await user.keyboard("{Escape}");
+    await chooseKeyAction(user, "old-a", "Delete key");
     const box = screen.getByRole("alertdialog");
     expect(within(box).getByText("Delete this key?")).toBeTruthy();
     expect(within(box).getByText("old-a")).toBeTruthy();
@@ -99,8 +107,9 @@ describe("Workspace -> red confirmation before revoke / delete", () => {
     const user = userEvent.setup();
     vi.mocked(api.deleteKey).mockRejectedValueOnce(new Error("nope")).mockResolvedValue({ id: 3, revoked_at: WHEN, deleted_at: WHEN });
     page();
-    await user.click(await screen.findByRole("button", { name: "Show revoked keys (1)" }));
-    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Revoked" }));
+    await screen.findByText("old-a");
+    await chooseKeyAction(user, "old-a", "Delete key");
     await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete key" }));
     expect(await within(screen.getByRole("alertdialog")).findByRole("alert")).toHaveTextContent("nope");
     await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete key" }));
@@ -109,30 +118,32 @@ describe("Workspace -> red confirmation before revoke / delete", () => {
   });
 });
 
-describe("Workspace -> Deleted keys section", () => {
-  it("keeps deleted keys out of the main table and its counts, and lists them separately on request", async () => {
+describe("Workspace -> deleted keys", () => {
+  it("keeps deleted keys out of the list until Deleted is ticked, then shows them without actions", async () => {
     const user = userEvent.setup();
     page();
     await screen.findByText("active-one");
-    expect(screen.getByText("Virtual keys (1)")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show revoked keys (1)" })).toBeTruthy(); // the deleted one is not counted
+    expect(screen.getByText("1 active · 1 revoked · 1 deleted")).toBeTruthy();
     expect(screen.queryByText("gone-a")).toBeNull();
-    expect(screen.getByText("Deleted keys (1)")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Show deleted keys" }));
-    expect(await screen.findByText("gone-a")).toBeTruthy();
-    expect(screen.getByText("12")).toBeTruthy(); // its history is still shown
+    expect(deletedBox()).not.toBeChecked();
+    await user.click(deletedBox());
+    await screen.findByText("gone-a");
+    const row = keyRow("gone-a");
+    expect(within(row).getByText("Deleted")).toBeTruthy();
+    expect(within(row).getByText("12")).toBeTruthy(); // its history is still shown
+    expect(within(row).queryByRole("button")).toBeNull(); // nothing can be done to a deleted key
     expect(screen.getByText(/can no longer be used or changed/)).toBeTruthy();
-    // even with revoked keys shown, a deleted key never returns to the main table
-    await user.click(screen.getByRole("button", { name: "Show revoked keys (1)" }));
+    // even with revoked keys shown, a deleted key is listed once
+    await user.click(revokedBox());
     expect(screen.getAllByText("gone-a")).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Hide deleted keys" }));
+    await user.click(deletedBox());
     expect(screen.queryByText("gone-a")).toBeNull();
   });
 
-  it("has no Deleted keys section when nothing is deleted", async () => {
+  it("does not mention deleted keys when nothing is deleted", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([key({ id: 1, label: "only" })]);
     page();
     await screen.findByText("only");
-    expect(screen.queryByText(/Deleted keys/)).toBeNull();
+    expect(screen.queryByText(/deleted/)).toBeNull();
   });
 });
