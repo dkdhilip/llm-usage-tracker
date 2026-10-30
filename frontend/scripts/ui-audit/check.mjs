@@ -137,11 +137,64 @@ await check("requestsRowOpensByKeyboard", async () => {
 
 await check("requestInspectorSemantics", async () => {
   const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/requests", "tbody tr, [data-request-row]");
-  await page.locator("tbody tr, [data-request-row]").first().click(); await page.waitForTimeout(500);
-  const s = await page.evaluate(() => { const d = document.querySelector('[role="dialog"], aside[aria-label="Request inspector"], [aria-label="Request inspector"]'); const btn = d?.querySelector("button"); return { labelled: !!d, closeNamed: !!(btn && (btn.getAttribute("aria-label") || /close|back/i.test(btn.textContent))) }; });
-  await page.keyboard.press("Escape"); await page.waitForTimeout(200);
-  const escCloses = await page.evaluate(() => !document.querySelector('.fixed.inset-0, [role="dialog"]'));
-  await ctx.close(); return { pass: s.labelled && s.closeNamed && escCloses, detail: JSON.stringify({ ...s, escCloses }) };
+  const rows = page.locator("tbody tr[data-request-row]");
+  await rows.first().click(); await page.waitForTimeout(500);
+  const info = () => page.evaluate(() => { const d = document.querySelector('aside[aria-label="Request inspector"]'); const cur = document.querySelector('tr[aria-current="true"]'); return { open: !!d, focusInside: !!d?.contains(document.activeElement), selected: cur?.getAttribute("data-request-row") ?? null, url: location.search }; });
+  const a = await info();
+  const named = await page.evaluate(() => [...document.querySelectorAll('aside[aria-label="Request inspector"] button')].every((b) => (b.getAttribute("aria-label") || b.textContent || "").trim()));
+  await page.locator("tbody tr[data-request-row]").nth(0).focus(); await page.keyboard.press("j"); await page.waitForTimeout(150);
+  const afterJ = await info();
+  await page.keyboard.press("k"); await page.waitForTimeout(150);
+  const afterK = await info();
+  await page.locator('aside[aria-label="Request inspector"] h2').focus(); await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  const closed = await page.evaluate(() => ({ gone: !document.querySelector('aside[aria-label="Request inspector"]'), focusOnRow: !!document.activeElement?.closest("tr[data-request-row]") }));
+  await ctx.close();
+  const pass = a.open && a.focusInside && named && afterJ.selected !== a.selected && afterK.selected === a.selected && closed.gone && closed.focusOnRow;
+  return { pass, detail: JSON.stringify({ opened: a.open, focusMovedIn: a.focusInside, buttonsNamed: named, jMoves: afterJ.selected !== a.selected, kBack: afterK.selected === a.selected, escCloses: closed.gone, focusReturnsToRow: closed.focusOnRow, url: a.url }) };
+});
+
+await check("requestInspectorAccessible", async () => {
+  // the open inspector (beside the list at 1440, a full-screen detail at 390), light and dark, with stored content shown
+  const out = {};
+  for (const [w, theme] of [[1440, "light"], [1440, "dark"], [390, "light"], [390, "dark"]]) {
+    const ctx = await context("auditadmin", w, theme); const page = await ctx.newPage(); await load(page, "/requests", "[data-request-row]");
+    const sel = w >= 1100 ? "tr[data-request-row]" : "button[data-request-row]";
+    const withContent = page.locator(sel, { has: page.locator("text=Content") }).first();
+    await ((await withContent.count()) ? withContent : page.locator(sel).first()).click();
+    await page.waitForTimeout(900);
+    if (SHOTS) await page.screenshot({ path: join(OUT, "shots", `request-open-${w}-${theme}.png`), fullPage: w < 1100 });
+    const v = await axeRun(page); const m = await page.evaluate(MEASURE);
+    out[`${w}-${theme}`] = { axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), unnamed: m.unnamed, small: m.small, overflow: m.overflow };
+    await ctx.close();
+  }
+  const bad = Object.values(out).filter((v) => v.axe || v.unnamed || v.overflow > 0);
+  return { pass: bad.length === 0, detail: JSON.stringify(out) };
+});
+
+await check("requestDeepLink", async () => {
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); await load(page, "/requests", "tbody tr, [data-request-row]");
+  await page.locator("tbody tr[data-request-row]").nth(1).click(); await page.waitForTimeout(400);
+  const url = page.url(); const id = new URL(url).searchParams.get("r");
+  const p2 = await ctx.newPage(); await load(p2, `/requests?r=${id}`, "tbody tr, [data-request-row]");
+  const ok = await p2.evaluate((i) => !!document.querySelector('aside[aria-label="Request inspector"]') && document.querySelector('tr[aria-current="true"]')?.getAttribute("data-request-row") === i, id);
+  const bad = await ctx.newPage(); await load(bad, "/requests?r=999999", "tbody tr, [data-request-row]");
+  const dropped = await bad.evaluate(() => !document.querySelector('aside[aria-label="Request inspector"]') && !location.search.includes("r="));
+  await ctx.close(); return { pass: !!id && ok && dropped, detail: `r=${id} reopens=${ok} unknownDropped=${dropped}` };
+});
+
+await check("requestDetailOnPhone", async () => {
+  const ctx = await context("auditadmin", 390); const page = await ctx.newPage(); await load(page, "/requests", "[data-request-row]");
+  const cards = page.locator("button[data-request-row]"); const n = await cards.count();
+  await cards.first().click(); await page.waitForTimeout(400);
+  const d = await page.evaluate(() => ({ h1: document.querySelector("h1")?.textContent, back: !!document.querySelector('button[aria-label="Back to requests list"]'), overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, listGone: !document.querySelector('ul[aria-label="Requests"]'), inUrl: location.search.includes("r="), focusOnHeading: document.activeElement?.tagName === "H1" }));
+  await page.goBack(); await page.waitForTimeout(400);
+  const backViaBrowser = await page.evaluate(() => !!document.querySelector('ul[aria-label="Requests"]') && !location.search.includes("r="));
+  await cards.first().click(); await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Back to requests list" }).click(); await page.waitForTimeout(400);
+  const e = await page.evaluate(() => ({ listBack: !!document.querySelector('ul[aria-label="Requests"]'), focusOnCard: !!document.activeElement?.closest("button[data-request-row]") }));
+  await ctx.close();
+  const pass = n > 0 && d.h1 === "Request" && d.back && d.overflow <= 0 && d.listGone && d.inUrl && d.focusOnHeading && backViaBrowser && e.listBack && e.focusOnCard;
+  return { pass, detail: JSON.stringify({ cards: n, ...d, browserBackCloses: backViaBrowser, ...e }) };
 });
 
 await check("confirmDialogTrapAndReturn", async () => {

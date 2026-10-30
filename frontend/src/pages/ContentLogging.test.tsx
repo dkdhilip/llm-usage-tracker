@@ -130,7 +130,7 @@ describe("Requests → stored content", () => {
 
   it("does not request content for a row without any", async () => {
     await open([row(8, false)]);
-    await screen.findByText("Request detail");
+    await screen.findByText("Request inspector");
     expect(api.requestContent).not.toHaveBeenCalled();
   });
 
