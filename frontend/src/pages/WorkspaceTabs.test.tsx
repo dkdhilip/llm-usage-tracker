@@ -114,14 +114,17 @@ describe("Workspace logging strip", () => {
   });
 });
 
-describe("Workspace first-run checklist", () => {
-  it("walks through the three steps for an empty workspace, and the key step opens the drawer", async () => {
+describe("Workspace Getting started section", () => {
+  const header = (name: RegExp | string) => screen.findByRole("button", { name });
+
+  it("is open for a workspace that is not set up, says what comes next, and its key step opens the drawer", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([]);
     vi.mocked(api.getWorkspace).mockResolvedValue(workspace({ providers: [provider("openai", false)] }));
     const user = userEvent.setup();
     page();
-    expect(await screen.findByRole("heading", { name: "Set up your gateway" })).toBeInTheDocument();
-    expect(screen.getByText("0 of 3 done")).toBeInTheDocument();
+    const toggle = await header(/^Getting started.*0 of 3 steps done$/);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveTextContent("Next: Add a provider key");
     expect(screen.getByRole("button", { name: "How to connect" })).toBeDisabled(); // no key to connect yet
     await user.click(screen.getByRole("button", { name: "Create your first key" }));
     expect(await screen.findByRole("dialog", { name: "Create a virtual key" })).toBeInTheDocument();
@@ -130,15 +133,81 @@ describe("Workspace first-run checklist", () => {
   it("checks off what the workspace already has", async () => {
     vi.mocked(api.listKeys).mockResolvedValue([key({ id: 1, label: "fresh", requests: 0 })]);
     page();
-    await screen.findByText("2 of 3 done");
+    await header(/^Getting started.*2 of 3 steps done$/);
     expect(screen.getAllByText("(done)", { exact: false, selector: "span" })).toHaveLength(2); // the provider and the key
     expect(screen.queryByRole("button", { name: "Create your first key" })).toBeNull();
   });
 
-  it("disappears once the gateway has served a request", async () => {
+  it("is closed once everything is done, says so, and opens on request", async () => {
+    const user = userEvent.setup();
+    page(); // a provider, keys, and requests served
+    const toggle = await header(/^Getting started.*3 of 3 steps done$/);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveTextContent(/Everything is set up/);
+    expect(screen.queryByText("Point your app at the gateway")).toBeNull();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Point your app at the gateway")).toBeInTheDocument();
+    expect(screen.getAllByText("(done)", { exact: false, selector: "span" })).toHaveLength(3);
+  });
+
+  it("remembers whether it was left open or closed", async () => {
+    const user = userEvent.setup();
+    const first = page();
+    await user.click(await header(/^Getting started.*3 of 3/)); // opened by choice
+    first.unmount();
     page();
-    await screen.findByText("prod-openai");
-    expect(screen.queryByRole("heading", { name: "Set up your gateway" })).toBeNull();
+    expect(await header(/^Getting started.*3 of 3/)).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: /^Getting started/ })); // closed by choice
+    expect(screen.getByRole("button", { name: /^Getting started/ })).toHaveAttribute("aria-expanded", "false");
+    localStorage.getItem("gettingStartedOpen") === "0" || expect.fail("the choice was not stored");
+  });
+
+  it("stays closed for an unfinished workspace if that is what the person chose", async () => {
+    vi.mocked(api.listKeys).mockResolvedValue([]);
+    localStorage.setItem("gettingStartedOpen", "0");
+    page();
+    expect(await header(/^Getting started.*1 of 3/)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("never shows 'nothing is done' while the data is still loading (no flash), and no false 'No keys yet'", async () => {
+    let resolveWs: (w: ReturnType<typeof workspace>) => void = () => {};
+    let resolveKeys: (k: KeyRow[]) => void = () => {};
+    vi.mocked(api.getWorkspace).mockReturnValue(new Promise((r) => (resolveWs = r)));
+    vi.mocked(api.listKeys).mockReturnValue(new Promise((r) => (resolveKeys = r)));
+    page();
+    await screen.findByRole("tablist");
+    expect(screen.queryByRole("button", { name: /^Getting started/ })).toBeNull();
+    expect(screen.queryByText(/steps done/)).toBeNull();
+    expect(screen.queryByText("0 active")).toBeNull();
+    expect(screen.queryByText(/No keys yet/)).toBeNull();
+    resolveWs(workspace());
+    await screen.findByText("Prompt logging"); // the workspace is in, the keys are not: still no verdict
+    expect(screen.queryByRole("button", { name: /^Getting started/ })).toBeNull();
+    resolveKeys([key({ id: 1, label: "prod-openai" })]);
+    expect(await header(/^Getting started.*3 of 3/)).toBeInTheDocument();
+    expect(await screen.findByText("prod-openai")).toBeInTheDocument();
+  });
+
+  it("says the data could not be loaded, instead of 'No keys yet', when the load fails", async () => {
+    vi.mocked(api.listKeys).mockRejectedValue(new Error("database unavailable"));
+    page();
+    expect(await screen.findByRole("alert")).toHaveTextContent("database unavailable");
+    expect(screen.getAllByText("Couldn't load this data.").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /^Getting started/ })).toBeNull();
+    expect(screen.queryByText(/No keys yet/)).toBeNull();
+  });
+
+  it("brings the key into view and opens its Connect guide from 'How to connect'", async () => {
+    vi.mocked(api.listKeys).mockResolvedValue([key({ id: 1, label: "fresh", requests: 0 })]);
+    vi.mocked(api.integrationGuide).mockResolvedValue({ target: "hosted", gateway_url: "https://gw.example.com", targets: { hosted: "https://gw.example.com", local: "http://127.0.0.1:8000" }, general_notes: [], providers: [] } as never);
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView");
+    const user = userEvent.setup();
+    page();
+    await user.click(await screen.findByRole("button", { name: "How to connect" }));
+    expect(await screen.findByRole("region", { name: "Connect your app" })).toBeInTheDocument();
+    await waitFor(() => expect(scroll.mock.instances.some((el) => (el as unknown as HTMLElement).getAttribute?.("data-key-id") === "1")).toBe(true));
+    scroll.mockRestore();
   });
 });
 
