@@ -6,6 +6,7 @@ import { keyStatus } from "../lib/keyOptions";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { InlineAlert } from "../components/ui/InlineAlert";
+import type { PanelStatus } from "../components/ui/PanelState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tab, TabList, TabPanel, Tabs } from "../components/ui/Tabs";
 import { ContentLoggingCard } from "./workspace/ContentLoggingCard";
@@ -24,6 +25,9 @@ export function Workspace() {
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [defaultCap, setDefaultCap] = useState(5);
   const [error, setError] = useState<string | null>(null);
+  // Whether each fetch has come back once. A later refresh keeps showing what it has instead of going back to loading.
+  const [wsLoaded, setWsLoaded] = useState(false);
+  const [keysLoaded, setKeysLoaded] = useState(false);
 
   // The tab is in the URL (?tab=), so a section can be linked to and survives a reload. Keys is the default.
   const asked = params.get("tab");
@@ -32,8 +36,20 @@ export function Workspace() {
 
   const refresh = useCallback(() => {
     setError(null);
-    api.getWorkspace().then(setWs).catch((e: Error) => setError(e.message));
-    api.listKeys().then(setKeys).catch((e: Error) => setError(e.message));
+    api
+      .getWorkspace()
+      .then((w) => {
+        setWs(w);
+        setWsLoaded(true);
+      })
+      .catch((e: Error) => setError(e.message));
+    api
+      .listKeys()
+      .then((k) => {
+        setKeys(k);
+        setKeysLoaded(true);
+      })
+      .catch((e: Error) => setError(e.message));
     api.getAccount().then((a) => setDefaultCap(a.live_cap_default_usd)).catch(() => {});
   }, []);
 
@@ -50,6 +66,7 @@ export function Workspace() {
   const configured = providers.filter((p) => p.configured).map((p) => p.provider);
   const members = (ws?.members ?? []).filter((m) => m.role === "member");
   const activeCount = keys.filter((k) => keyStatus(k) === "active").length;
+  const keysStatus: PanelStatus = wsLoaded && keysLoaded ? "ready" : error ? "error" : "loading";
 
   return (
     <div>
@@ -98,6 +115,7 @@ export function Workspace() {
             refresh={refresh}
             onError={setError}
             onTab={setTab}
+            status={keysStatus}
           />
         </TabPanel>
         <TabPanel value="providers" className="max-w-3xl">

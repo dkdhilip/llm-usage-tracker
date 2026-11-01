@@ -201,7 +201,7 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
     return (
       <ul className="divide-y divide-line" aria-label="Virtual keys">
         {keys.map((k) => (
-          <li key={k.id} className={`py-4 ${keyStatus(k) !== "active" ? "text-fg-muted" : ""}`}>
+          <li key={k.id} data-key-id={k.id} className={`py-4 ${keyStatus(k) !== "active" ? "text-fg-muted" : ""}`}>
             <div className="flex items-start justify-between gap-2">
               <KeyName k={k} />
               <Status k={k} ready={ready(k)} />
@@ -258,7 +258,7 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
             const muted = keyStatus(k) !== "active";
             return (
               <Fragment key={k.id}>
-                <tr className={`border-b border-line last:border-0 ${muted ? "text-fg-muted" : ""}`}>
+                <tr data-key-id={k.id} className={`border-b border-line last:border-0 ${muted ? "text-fg-muted" : ""}`}>
                   <td className="py-2.5 pr-3">
                     <KeyName k={k} />
                   </td>

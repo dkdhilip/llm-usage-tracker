@@ -5,8 +5,10 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Dialog, DialogContent, DialogTrigger } from "../../components/ui/Dialog";
 import { KeyStatusFilter } from "../../components/KeyStatusFilter";
+import { PanelPlaceholder, type PanelStatus } from "../../components/ui/PanelState";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { DEFAULT_KEY_STATUSES, keyStatus, type KeyStatus } from "../../lib/keyOptions";
-import { Checklist } from "./Checklist";
+import { GettingStarted } from "./GettingStarted";
 import { CreateKeyForm } from "./CreateKeyForm";
 import { KeysTable, type KeyActions } from "./KeysTable";
 
@@ -57,7 +59,11 @@ export function KeysTab({
   refresh,
   onError,
   onTab,
+  status = "ready",
 }: {
+  /** Until the workspace and its keys have loaded the tab says so, instead of "0 active" and "No keys yet", and the
+   *  setup steps are not drawn (every one of them would read "not done"). */
+  status?: PanelStatus;
   ws: WorkspaceDetail | null;
   keys: KeyRow[];
   configured: string[];
@@ -128,18 +134,27 @@ export function KeysTab({
 
   const hasRequests = keys.some((k) => k.requests > 0);
   const firstActive = activeKeys[0];
+  const loaded = status === "ready";
+
+  // "How to connect" opens that key's guide and brings it into view (it opens under the key's row, which may be far down)
+  const showConnect = (id: number) => {
+    if (!statuses.includes("active")) changeStatuses([...statuses, "active"]);
+    setConnectId(id);
+    requestAnimationFrame(() => document.querySelector(`[data-key-id="${id}"]`)?.scrollIntoView({ block: "start" }));
+  };
   const parts = [`${count("active")} active`, count("revoked") ? `${count("revoked")} revoked` : "", count("deleted") ? `${count("deleted")} deleted` : ""].filter(Boolean);
 
   return (
     <div className="space-y-4">
-      {(!hasRequests || activeKeys.length === 0) && (
-        <Checklist
+      {status === "loading" && <Skeleton className="h-[68px] w-full rounded-xl" />}
+      {loaded && (
+        <GettingStarted
           hasProvider={configured.length > 0}
           hasKey={activeKeys.length > 0}
           hasRequests={hasRequests}
           onProviders={() => onTab("providers")}
           onCreate={() => setCreateOpen(true)}
-          onConnect={firstActive ? () => setConnectId(firstActive.id) : undefined}
+          onConnect={firstActive ? () => showConnect(firstActive.id) : undefined}
         />
       )}
 
@@ -151,7 +166,7 @@ export function KeysTab({
             <h2 id="keys-title" className="text-sm font-semibold text-fg">
               Virtual keys
             </h2>
-            <span className="text-ui text-fg-muted">{parts.join(" · ")}</span>
+            {loaded && <span className="text-ui text-fg-muted">{parts.join(" · ")}</span>}
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <KeyStatusFilter value={statuses} onChange={changeStatuses} />
@@ -167,24 +182,34 @@ export function KeysTab({
                 // the one-time secret is shown here: a stray click outside must not close it
                 onInteractOutside={(e) => e.preventDefault()}
               >
-                <CreateKeyForm
-                  framed={false}
-                  onCreated={refresh}
-                  configuredProviders={configured}
-                  members={members}
-                  masterText={ws?.content_logging?.enabled}
-                  masterImages={ws?.image_logging?.enabled}
-                />
+                {loaded ? (
+                  <CreateKeyForm
+                    framed={false}
+                    onCreated={refresh}
+                    configuredProviders={configured}
+                    members={members}
+                    masterText={ws?.content_logging?.enabled}
+                    masterImages={ws?.image_logging?.enabled}
+                  />
+                ) : (
+                  <div className="p-4">
+                    <PanelPlaceholder state={status === "error" ? "error" : "loading"} className="h-40" />
+                  </div>
+                )}
               </DialogContent>
             </Dialog>
           </div>
         </div>
         <div className="p-4">
-          <KeysTable
-            keys={visible}
-            a={actions}
-            empty={keys.length === 0 ? "No keys yet. Create one to get started." : "No keys with these statuses. Tick another status above."}
-          />
+          {loaded ? (
+            <KeysTable
+              keys={visible}
+              a={actions}
+              empty={keys.length === 0 ? "No keys yet. Create one to get started." : "No keys with these statuses. Tick another status above."}
+            />
+          ) : (
+            <PanelPlaceholder state={status === "error" ? "error" : "loading"} className="h-40" />
+          )}
           {statuses.includes("deleted") && count("deleted") > 0 && (
             <p className="mt-3 text-xs text-fg-muted">
               Deleted keys can no longer be used or changed. Their requests and costs stay in the dashboard.
