@@ -288,7 +288,11 @@ class UsageLog(Base):
     # Legacy columns from the retired simulator — always written "live" / False now.
     simulated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    # "success" | "error" for a request that reached a provider; "blocked" is reserved for one that was stopped
+    # before any provider call (see app.usage_status). Analytics ignore blocked rows (scoping.counted_usage).
     status: Mapped[str] = mapped_column(String, nullable=False, default="success")
+    # NULL for an ordinary row; "flagged" | "blocked" | "unchecked" once a content rule applies (app.usage_status).
+    guardrail: Mapped[str | None] = mapped_column(String(12))
     mode: Mapped[str] = mapped_column(String, nullable=False, default="live")
     # Truncated request/response text — populated only when LOG_BODIES=true.
     prompt_preview: Mapped[str | None] = mapped_column(Text)

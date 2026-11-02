@@ -11,6 +11,7 @@ from fastapi import Depends
 from sqlalchemy import Select, select
 
 from app.models import UsageLog, VirtualKey
+from app.usage_status import BLOCKED
 from app.workspace import Membership, require_membership
 
 # `Viewer` is just the membership under a name the read routers already use.
@@ -27,6 +28,16 @@ def scope_usage(stmt: Select, v: Viewer) -> Select:
     if not v.is_admin:
         keys = keys.where(VirtualKey.assigned_user_id == v.user_id)
     return stmt.where(UsageLog.key_id.in_(keys))
+
+
+def counted_usage():
+    """Predicate for every query that COUNTS requests (analytics, per-key and per-member rollups, the stored-row cap).
+
+    A blocked request never reached a provider: it has no tokens, no cost and no real latency, and it must not
+    count as a request, dilute the error rate or the latency percentiles, move "last used", or fill the workspace's
+    row cap. The Requests list is the one place that deliberately does show blocked rows, so it does not use this.
+    """
+    return UsageLog.status != BLOCKED
 
 
 def scope_keys(stmt: Select, v: Viewer) -> Select:

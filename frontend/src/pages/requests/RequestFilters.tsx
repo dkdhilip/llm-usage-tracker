@@ -70,6 +70,7 @@ export function RequestFilters({
           <option value="">All</option>
           <option value="success">Success</option>
           <option value="error">Error</option>
+          <option value="blocked">Blocked</option>
         </select>
       </Field>
       <Field label="From">

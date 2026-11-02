@@ -46,5 +46,19 @@ with SessionLocal() as db:
                 db.add(u)
                 db.flush()
                 u.ts = dt.datetime.now(dt.UTC) - dt.timedelta(days=day, hours=random.randint(0, 20), minutes=random.randint(0, 59))
+    # A few requests stopped before any provider call (status "blocked": no tokens, no cost). They must appear on the
+    # Requests page and change no dashboard number; the audit then covers their badge, cost cell and filter.
+    blocked = 0
+    for label in ("support-bot", "prod-openai", "support-bot"):
+        vk = db.scalar(select(VirtualKey).where(VirtualKey.label == label))
+        if vk is None:
+            continue
+        blocked += 1
+        u = UsageLog(key_id=vk.id, provider=PLAN[label][0], model=PLAN[label][1][0][0], prompt_tokens=0, completion_tokens=0,
+                     total_tokens=0, cost=0.0, latency_ms=1, status="blocked", guardrail="blocked",
+                     request_id=f"uiaudit-blocked-{blocked}")
+        db.add(u)
+        db.flush()
+        u.ts = dt.datetime.now(dt.UTC) - dt.timedelta(hours=blocked)
     db.commit()
-    print("seeded", n, "usage rows")
+    print("seeded", n, "usage rows and", blocked, "blocked rows")

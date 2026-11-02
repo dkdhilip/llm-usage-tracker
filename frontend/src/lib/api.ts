@@ -323,7 +323,9 @@ export interface RequestRow {
   cost: number | null;
   cost_source: CostSource;
   latency_ms: number;
-  status: string;
+  status: string; // "success" | "error", or "blocked" (stopped before any provider call: no tokens, no cost)
+  /** null for an ordinary request; set once a content rule applies */
+  guardrail?: "flagged" | "blocked" | "unchecked" | null;
   prompt_preview: string | null;
   response_preview: string | null;
   has_content?: boolean;
@@ -383,6 +385,7 @@ export interface UsageSummary {
   latency_p95_ms: number;
   error_rate: number;
   errors: number;
+  blocked_requests?: number; // stopped before any provider call; never included in the counts above
   tokens_per_sec: number;
   active_keys: number;
   unpriced_requests?: number; // requests with no cost at all (the model has no price yet)
