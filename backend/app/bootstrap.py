@@ -199,6 +199,7 @@ def _migrate(db: Session) -> None:
         db.commit()
 
     _migrate_v15_usage_guardrail(db)
+    _migrate_v16_guardrails(db)
 
 
 _V15_LOCK_TIMEOUT = "5s"  # how long the v15 ALTER may wait for its lock (a test shortens it)
@@ -219,6 +220,37 @@ def _migrate_v15_usage_guardrail(db: Session) -> None:
     # uvicorn's own logger, not "app.bootstrap": app loggers have no handler/level configured and would hide this at
     # INFO, but a deploy needs to see in its logs that the migration ran.
     logging.getLogger("uvicorn.error").info("bootstrap v15: usage_logs.guardrail ensured")
+
+
+def _migrate_v16_guardrails(db: Session) -> None:
+    """v16: guardrails. Additive only: two columns with constant defaults (`workspaces.guardrail_version`,
+    `virtual_keys.has_guardrails`; no table rewrite, existing rows keep the default, nothing is backfilled) and new
+    tables (normally made by `create_all` just before this; created here too so the ledger is complete). With
+    GUARDRAILS_ENABLED off nothing reads or writes any of it. Same safety rules as v15: `IF NOT EXISTS` is atomic (safe to
+    repeat and to race), a short lock_timeout makes a stuck lock fail the boot instead of being skipped."""
+    from app.models import (
+        AuditEvent,
+        GuardrailHit,
+        GuardrailRecordingCounter,
+        GuardrailRule,
+        GuardrailRuleSet,
+        KeyGuardrailSet,
+    )
+
+    db.execute(text(f"SET LOCAL lock_timeout = '{_V15_LOCK_TIMEOUT}'"))
+    db.execute(text("ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS guardrail_version INTEGER NOT NULL DEFAULT 0"))
+    db.execute(text("ALTER TABLE virtual_keys ADD COLUMN IF NOT EXISTS has_guardrails BOOLEAN NOT NULL DEFAULT false"))
+    db.commit()  # also ends the transaction, which ends the SET LOCAL
+    # dependency order: sets, then rules / attachments, then everything that points at usage rows
+    # CREATE TABLE IF NOT EXISTS is check-then-act, so two booting processes can collide in the catalog; a transaction-
+    # scoped advisory lock makes them take turns (released automatically at commit/rollback).
+    with db.get_bind().begin() as conn:
+        conn.execute(text("SELECT pg_advisory_xact_lock(74160016)"))
+        for model in (
+            GuardrailRuleSet, GuardrailRule, KeyGuardrailSet, GuardrailHit, GuardrailRecordingCounter, AuditEvent,
+        ):
+            model.__table__.create(bind=conn, checkfirst=True)
+    logging.getLogger("uvicorn.error").info("bootstrap v16: guardrail tables and columns ensured")
 
 
 def _migrate_v6_workspaces(db: Session) -> None:
