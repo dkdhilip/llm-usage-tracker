@@ -31,6 +31,11 @@
 | `RENDER_GIT_BRANCH` | `""` | Deployed branch, set automatically by Render. Surfaced at `GET /version`; unset locally ⇒ `branch: null`. |
 | `LOG_BODIES` | `false` | **Legacy**, instance-wide: store 500-char plaintext prompt/response previews on `usage_logs`. Off by default — bodies can be sensitive. Superseded by the per-workspace [Prompt & response logging](content-logging.md#prompt--response-logging) below, which it does not enable. |
 | `CONTENT_RETENTION_DAYS` | `30` | How long stored prompt/response content is kept (1–30; values above 30 are rejected at startup). |
+| `GUARDRAILS_ENABLED` | `false` | Master switch for content rules on virtual keys ([guardrails.md](guardrails.md)). Off: nothing is evaluated and no guardrail query runs. |
+| `GUARDRAIL_RETENTION_DAYS` | `30` | How long blocked-request rows and guardrail hits (including their encrypted snippet) are kept, then deleted whole (1–30). Independent of `CONTENT_RETENTION_DAYS`. |
+| `GUARDRAIL_RECORDING_CEILING_PER_HOUR` | `1000` | Evidence records per workspace per clock hour. Only recording is throttled; blocking never is. `0` records nothing. |
+| `GUARDRAIL_EVAL_BUDGET_MS` | `100` | Time budget per request (1–100). Exceeded: hits found so far still count, the request is marked `unchecked` and goes through. |
+| `GUARDRAIL_REGEX_TIMEOUT_MS` / `GUARDRAIL_SCAN_CAP_CHARS` | `10` / `1000000` | Per-match regex timeout, and the most text scanned per request (the rest is reported as `oversize`). |
 | `CONTENT_MAX_BYTES` | `32768` | Max stored size per side (request / response) of one record; more is truncated and flagged. |
 | `CONTENT_MAX_FIELD_CHARS` | `8000` | Max characters kept per message / field. |
 | `CONTENT_MAX_ROWS_PER_WORKSPACE` | `2000` | Capture pauses (requests are unaffected) while a workspace holds this many unexpired records. |

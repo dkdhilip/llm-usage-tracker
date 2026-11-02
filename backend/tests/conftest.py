@@ -89,14 +89,16 @@ def _schema():
 
 @pytest.fixture(autouse=True)
 def _clean_tables():
+    from app import guardrails as _g
     from app import providers as _p
     from app import ratelimit as _rl
 
     with SessionLocal() as s:
         s.execute(
             text(
-                "TRUNCATE usage_content_images, usage_content, idempotency_keys, usage_logs, allowed_providers, virtual_keys, "
-                "provider_credentials, workspace_invites, users, workspaces "
+                "TRUNCATE guardrail_hits, guardrail_recording_counters, key_guardrail_sets, guardrail_rules, guardrail_rule_sets, "
+                "audit_events, usage_content_images, usage_content, idempotency_keys, usage_logs, allowed_providers, "
+                "virtual_keys, provider_credentials, workspace_invites, users, workspaces "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -104,6 +106,7 @@ def _clean_tables():
     _p._cache.clear()
     _p._breaker.clear()
     _rl.reset_for_tests()
+    _g.reset_for_tests()
     yield
 
 

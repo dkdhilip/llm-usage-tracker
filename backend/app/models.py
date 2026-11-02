@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -49,6 +50,10 @@ class Workspace(Base):
     )
     image_logging_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     image_logging_updated_by: Mapped[int | None] = mapped_column(BigInteger)
+    # Bumped in the same transaction as ANY change to this workspace's guardrail rules or key attachments. The
+    # gateway validates its in-process compiled-rule cache against this number on every use, so a change applies
+    # to the very next request in any worker (app.guardrails).
+    guardrail_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class User(Base):
@@ -135,6 +140,9 @@ class VirtualKey(Base):
     # content are untouched) but it leaves the keys list for a separate "Deleted keys" view, no longer counts toward
     # MAX_KEYS_PER_WORKSPACE, and cannot be edited. Authentication is unaffected: a deleted key is always revoked.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Denormalised "this key has at least one guardrail rule set attached". False (the usual case) lets the gateway
+    # skip guardrails with no extra query. Maintained whenever attachments change (app.guardrails.sync_key_flag).
+    has_guardrails: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Null = never expires. Past this instant, require_virtual_key rejects the
     # key with the same generic 401 as a revoked/unknown key (no state leak).
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -449,3 +457,135 @@ class IdempotencyRecord(Base):
         nullable=False,
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GuardrailRuleSet(Base):
+    """A named, reusable group of content rules (e.g. "No secrets"), owned by one workspace and attached to keys."""
+
+    __tablename__ = "guardrail_rule_sets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    created_by: Mapped[int | None] = mapped_column(BigInteger)  # informational user id, no FK (like updated_by above)
+
+    __table_args__ = (Index("uq_guardrail_set_name", "workspace_id", func.lower(name), unique=True),)
+
+
+class GuardrailRule(Base):
+    """One rule. kind: phrase (case-insensitive text), regex (runs on the ORIGINAL text with the admin's own flags),
+    preset (a built-in detector named by preset_id). action: flag (let it through, alert) or block."""
+
+    __tablename__ = "guardrail_rules"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    rule_set_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guardrail_rule_sets.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    pattern: Mapped[str | None] = mapped_column(String)
+    preset_id: Mapped[str | None] = mapped_column(String(20))
+    action: Mapped[str] = mapped_column(String(5), nullable=False)
+    whole_word: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('phrase','regex','preset')", name="ck_guardrail_rule_kind"),
+        CheckConstraint("action IN ('flag','block')", name="ck_guardrail_rule_action"),
+        CheckConstraint("pattern IS NULL OR length(pattern) <= 200", name="ck_guardrail_rule_pattern_len"),
+        Index("ix_guardrail_rules_set", "rule_set_id"),
+    )
+
+
+class KeyGuardrailSet(Base):
+    """Which rule sets apply to which virtual key (many-to-many)."""
+
+    __tablename__ = "key_guardrail_sets"
+
+    key_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("virtual_keys.id", ondelete="CASCADE"), primary_key=True
+    )
+    rule_set_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("guardrail_rule_sets.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class GuardrailHit(Base):
+    """A rule that matched one request. Doubles as the admin's notification (unread = reviewed_at IS NULL).
+    Names are snapshots (the rule may later be edited or deleted). The matched text is NEVER stored; the snippet is a
+    short redacted context, encrypted, and may be absent. The whole row is deleted once expires_at passes."""
+
+    __tablename__ = "guardrail_hits"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    key_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("virtual_keys.id", ondelete="CASCADE"), nullable=False)
+    usage_log_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usage_logs.id", ondelete="CASCADE"), nullable=False
+    )
+    rule_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("guardrail_rules.id", ondelete="SET NULL"))
+    rule_name: Mapped[str] = mapped_column(String, nullable=False)
+    rule_set_name: Mapped[str] = mapped_column(String, nullable=False)
+    rule_kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    action: Mapped[str] = mapped_column(String(5), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_role: Mapped[str | None] = mapped_column(String(20))
+    occurrences: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    snippet_enc: Mapped[str | None] = mapped_column(Text)  # Fernet; None when no safe snippet exists
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger)  # informational user id, no FK
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("usage_log_id", "rule_id", name="uq_guardrail_hit_request_rule"),
+        Index("ix_guardrail_hits_unreviewed", "workspace_id", "id", postgresql_where=reviewed_at.is_(None)),
+        Index("ix_guardrail_hits_key_ts", "key_id", "ts"),
+        Index("ix_guardrail_hits_expires", "expires_at"),
+    )
+
+
+class GuardrailRecordingCounter(Base):
+    """How many evidence records a workspace has written in one clock hour (database clock). One atomic upsert per
+    admission keeps the hourly recording ceiling exact under any concurrency (app.guardrails.admit)."""
+
+    __tablename__ = "guardrail_recording_counters"
+
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    bucket: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    recorded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    throttled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditEvent(Base):
+    """A small, generic record of an administrative or operational event in a workspace. The detail holds ids, names
+    and counts only: never prompt text, matched text or secrets."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_user_id: Mapped[int | None] = mapped_column(BigInteger)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    target_type: Mapped[str | None] = mapped_column(String)
+    target_id: Mapped[str | None] = mapped_column(String)
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (Index("ix_audit_events_workspace_ts", "workspace_id", "ts"),)

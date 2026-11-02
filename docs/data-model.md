@@ -110,3 +110,11 @@ table, and `usage_logs.usage_raw`/nullable `cost`. v8 adds the `model_pricing` t
 with `ADD COLUMN IF NOT EXISTS` (atomic, so safe to repeat and to race), a short `lock_timeout`
 (a stuck lock fails the boot instead of being skipped), and no backfill. All additive and backward
 compatible with every key/row created before them.
+
+v16 (guardrails, dark until `GUARDRAILS_ENABLED=true`) adds `workspaces.guardrail_version INTEGER NOT NULL
+DEFAULT 0` and `virtual_keys.has_guardrails BOOLEAN NOT NULL DEFAULT false` (constant defaults: no table rewrite,
+nothing backfilled) and six tables: `guardrail_rule_sets`, `guardrail_rules`, `key_guardrail_sets`,
+`guardrail_hits` (one row per request and matching rule, unique on `(usage_log_id, rule_id)`, an encrypted
+redacted `snippet_enc`, `expires_at`), `guardrail_recording_counters` (one row per workspace and clock hour: the
+evidence ceiling) and `audit_events`. Tables are created under a transaction-scoped advisory lock, so two booting
+processes take turns. See [guardrails.md](guardrails.md).

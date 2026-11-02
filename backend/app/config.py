@@ -102,6 +102,28 @@ class Settings(BaseSettings):
     # CONTENT_RETENTION_DAYS. The retention is capped at 30 days by validation — it cannot be configured longer.
     # Independent of the legacy global LOG_BODIES flag above.
     CONTENT_RETENTION_DAYS: int = Field(default=30, ge=1, le=30)
+
+    # --- Guardrails (content rules on virtual keys; see docs/guardrails.md). OFF unless GUARDRAILS_ENABLED=true:
+    # with it off nothing is evaluated, nothing is written, and the gateway behaves exactly as before.
+    GUARDRAILS_ENABLED: bool = False
+    # Blocked usage rows and guardrail hits are deleted after this many days. A SEPARATE setting from content
+    # logging's retention on purpose (that one can be set shorter); it can never exceed 30.
+    GUARDRAIL_RETENTION_DAYS: int = Field(default=30, ge=1, le=30)
+    # Evidence (a blocked usage row + its hits) is recorded at most this many times per workspace per hour. Only the
+    # RECORDING is throttled: a matching request is always blocked/flagged, whatever this is set to (0 = no evidence).
+    GUARDRAIL_RECORDING_CEILING_PER_HOUR: int = Field(default=1000, ge=0, le=100_000)
+    # Total evaluation time per request. Hard maximum 100 ms: it can be lowered, never raised. When it runs out the
+    # request goes through, marked "unchecked", and any block already found still blocks.
+    GUARDRAIL_EVAL_BUDGET_MS: int = Field(default=100, ge=1, le=100)
+    GUARDRAIL_REGEX_TIMEOUT_MS: int = Field(default=10, ge=1, le=100)  # per rule, per scan
+    GUARDRAIL_SCAN_CAP_CHARS: int = Field(default=1_000_000, ge=1_000, le=1_000_000)
+    # Limits (enforced when rules are saved, and again at evaluation).
+    GUARDRAIL_MAX_PATTERN_CHARS: int = Field(default=200, ge=1, le=200)
+    GUARDRAIL_MAX_RULES_PER_SET: int = Field(default=50, ge=1, le=50)
+    GUARDRAIL_MAX_SETS_PER_KEY: int = Field(default=5, ge=1, le=5)
+    GUARDRAIL_MAX_RULES_PER_KEY: int = Field(default=100, ge=1, le=100)
+    GUARDRAIL_MAX_SETS_PER_WORKSPACE: int = Field(default=20, ge=1, le=20)
+    GUARDRAIL_MAX_HITS_PER_REQUEST: int = Field(default=20, ge=1, le=20)
     # Size limits per stored side (request / response), measured on the redacted UTF-8 text before encryption;
     # anything beyond is cut and flagged as truncated. A single text field is cut at CONTENT_MAX_FIELD_CHARS.
     CONTENT_MAX_BYTES: int = Field(default=32_768, ge=1_024, le=262_144)

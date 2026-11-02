@@ -7,6 +7,7 @@ from app.gateway import (
     authorize_model,
     authorize_provider,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     live_key_for,
@@ -63,6 +64,10 @@ def proxy_chat(
     enforce_budget(db, vk)
     enforce_workspace_cap(db, vk, body.provider)
     require_live_ready(db, vk, body.provider)  # 403 paused / 402 no key / 503 breaker — BEFORE the claim
+    guard = enforce_guardrails(
+        db, vk, "chat", {"messages": body.messages or [{"role": "user", "content": body.prompt}]},
+        body.provider, body.model,
+    )
 
     # run_completion owns the provider call + error recording but not the final
     # response shape, so claim here and finalize after the response is built.
@@ -73,13 +78,13 @@ def proxy_chat(
         model=body.model,
     )
     try:
-        result = run_completion(db, vk, body.provider, body.model, prompt, capture=capture)
+        result = run_completion(db, vk, body.provider, body.model, prompt, capture=capture, guard=guard)
     except HTTPException as exc:
         idempotency.finalize_or_release_http_error(idem, exc)
         raise
     if capture is not None:
         capture.set_response_text(result.text)
-    row = record_usage(db, vk, body.provider, body.model, prompt, result, capture=capture)
+    row = record_usage(db, vk, body.provider, body.model, prompt, result, capture=capture, guard=guard)
 
     resp = ChatResponse(
         request_id=row.request_id,

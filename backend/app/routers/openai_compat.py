@@ -41,6 +41,7 @@ from app.db import get_db
 from app.gateway import (
     CompletionResult,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     record_usage,
@@ -113,6 +114,7 @@ def chat_completions(
             enforce_budget(db, vk)
             enforce_workspace_cap(db, vk, provider)
             live_key = require_live_ready(db, vk, provider)  # 403 paused / 402 no key
+            guard = enforce_guardrails(db, vk, "chat", native_body, provider, model)
             response = run_native_completion(
                 db,
                 vk,
@@ -126,6 +128,7 @@ def chat_completions(
                 body=native_body,
                 idem=idem,
                 capture=content_capture.begin(db, vk, "chat", native_body),
+                guard=guard,
             )
             return JSONResponse(response)
 
@@ -133,6 +136,7 @@ def chat_completions(
         enforce_budget(db, vk)
         enforce_workspace_cap(db, vk, provider)
         live_key = require_live_ready(db, vk, provider)  # 403 paused / 402 no key
+        guard = enforce_guardrails(db, vk, "chat", native_body, provider, model)
         idem = idempotency.claim_streaming(
             db, vk, header=idempotency_key,
             endpoint="/v1/chat/completions:stream", provider=provider, model=model,
@@ -150,6 +154,7 @@ def chat_completions(
                 body=native_body,
                 idem_record_id=idem.record_id,
                 capture=content_capture.begin(db, vk, "chat", native_body),
+                guard=guard,
             ),
             media_type="text/event-stream",
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
@@ -173,16 +178,19 @@ def chat_completions(
         enforce_budget(db, vk)
         enforce_workspace_cap(db, vk, provider)
         require_live_ready(db, vk, provider)  # 403 paused / 402 no key
+        guard = enforce_guardrails(db, vk, "chat", body, provider, model)
         idempotency.claim(idem)
         capture = content_capture.begin(db, vk, "chat", body, model=model)
         try:
-            result = run_completion(db, vk, provider, model, prompt, capture=capture)
+            result = run_completion(db, vk, provider, model, prompt, capture=capture, guard=guard)
         except HTTPException as exc:
             idempotency.finalize_or_release_http_error(idem, exc)
             raise
         if capture is not None:
             capture.set_response_text(result.text)
-        row = record_usage(db, vk, provider, model, prompt, result, request_id=cid, capture=capture)
+        row = record_usage(
+            db, vk, provider, model, prompt, result, request_id=cid, capture=capture, guard=guard
+        )
         resp = {
             "id": cid,
             "object": "chat.completion",
@@ -213,6 +221,7 @@ def chat_completions(
     enforce_budget(db, vk)
     enforce_workspace_cap(db, vk, provider)
     live_key = require_live_ready(db, vk, provider)  # 403 paused / 402 no key
+    guard = enforce_guardrails(db, vk, "chat", body, provider, model)
     stream_idem = idempotency.claim_streaming(
         db, vk, header=idempotency_key,
         endpoint="/v1/chat/completions:stream", provider=provider, model=model, body_material=body,
@@ -309,7 +318,7 @@ def chat_completions(
         if capture is not None and status == "success":  # an error note is not provider content: request only
             capture.set_response_text(result.text)
         record_usage_detached(
-            vk_id, provider, model, prompt, result, request_id=cid, status=status, capture=capture
+            vk_id, provider, model, prompt, result, request_id=cid, status=status, capture=capture, guard=guard
         )
         idempotency.release_detached(idem_record_id)  # end of stream => drop the concurrency lock
 
