@@ -28,6 +28,7 @@ class KeyCreate(BaseModel):
     # Per-key content logging: default OFF; also needs the workspace master switches (see VirtualKey)
     content_logging_enabled: bool = False
     image_logging_enabled: bool = False
+    guardrail_rule_set_ids: list[int] | None = None  # content rule sets to attach (admin; see /api/guardrails)
 
 
 class KeyUpdate(BaseModel):
@@ -46,6 +47,7 @@ class KeyUpdate(BaseModel):
     clear_allowed_models: bool = False
     content_logging_enabled: bool | None = None
     image_logging_enabled: bool | None = None
+    guardrail_rule_set_ids: list[int] | None = None  # replaces the attached rule sets; [] detaches all
 
 
 class KeyCreated(BaseModel):
@@ -90,6 +92,7 @@ class KeyOut(BaseModel):
     unpriced_requests: int = 0  # of `requests`, how many have no cost (the model has no price yet)
     content_logging_enabled: bool = False
     image_logging_enabled: bool = False
+    guardrail_rule_set_ids: list[int] = []  # content rules attached to this key (admin view)
 
 
 # ---- providers ----
