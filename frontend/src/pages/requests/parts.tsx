@@ -1,5 +1,6 @@
 import type { RequestRow } from "../../lib/api";
 import { Badge } from "../../components/ui/Badge";
+import { AlertIcon } from "../../components/ui/icons";
 import { providerColor } from "../../lib/chartColors";
 import { costSourceLabel, usd } from "../../lib/format";
 
@@ -58,4 +59,38 @@ export function ProviderDot({ provider }: { provider: string }) {
 
 export function seconds(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`;
+}
+
+/** A request a content rule matched (it was blocked, or flagged): its row is tinted red, and says why in words. */
+export const isRuleRow = (row: RequestRow) => row.guardrail === "blocked" || row.guardrail === "flagged";
+
+const ruleNames = (row: RequestRow) => {
+  const names = [...new Set((row.guardrail_rules ?? []).map((r) => r.rule_name))];
+  return names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ");
+};
+
+/** What the content rules did to this request, as text: the colour and the icon only reinforce it. A blocked request
+ *  already says "Blocked" in its status, so this adds the rule; a flagged one says "Flagged"; one the rules could not
+ *  fully check says so, because that is not the same as "nothing matched". */
+export function GuardrailBadge({ row }: { row: RequestRow }) {
+  if (row.guardrail === "blocked") {
+    const names = ruleNames(row);
+    return names ? <span className="mt-0.5 block text-xs text-danger-fg">Rule: {names}</span> : null;
+  }
+  if (row.guardrail === "flagged") {
+    const names = ruleNames(row);
+    return (
+      <Badge variant="warning" className="mt-0.5" title="Allowed through, but a content rule matched">
+        <AlertIcon className="h-3 w-3" />
+        Flagged{names ? `: ${names}` : ""}
+      </Badge>
+    );
+  }
+  if (row.guardrail === "unchecked")
+    return (
+      <Badge className="mt-0.5" title="The content rules could not all be applied to this request, so it went through unchecked">
+        Not fully checked
+      </Badge>
+    );
+  return null;
 }

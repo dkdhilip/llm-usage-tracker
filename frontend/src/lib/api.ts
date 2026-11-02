@@ -327,6 +327,8 @@ export interface RequestRow {
   status: string; // "success" | "error", or "blocked" (stopped before any provider call: no tokens, no cost)
   /** null for an ordinary request; set once a content rule applies */
   guardrail?: "flagged" | "blocked" | "unchecked" | null;
+  /** the rules that matched (unexpired matches only) */
+  guardrail_rules?: { rule_name: string; action: GuardrailAction }[];
   prompt_preview: string | null;
   response_preview: string | null;
   has_content?: boolean;
@@ -505,6 +507,43 @@ export interface GuardrailActivity {
   target_type: string | null;
   target_id: string | null;
   detail: Record<string, unknown>;
+}
+
+export interface GuardrailHitGroup {
+  key_id: number;
+  key_label: string;
+  key_prefix: string;
+  rule_id: number | null;
+  rule_name: string;
+  rule_set_name: string;
+  rule_kind: GuardrailKind;
+  action: GuardrailAction;
+  total: number;
+  unread: number;
+  last_seen: string;
+  last_hit_id: number;
+}
+
+export interface GuardrailHit {
+  id: number;
+  ts: string;
+  usage_id: number;
+  request_id: string;
+  key_id: number;
+  key_label: string;
+  provider: string;
+  model: string;
+  request_status: string;
+  rule_id: number | null;
+  rule_name: string;
+  rule_set_name: string;
+  rule_kind: GuardrailKind;
+  action: GuardrailAction;
+  source_role: string | null;
+  occurrences: number;
+  snippet: string | null;
+  snippet_available: boolean;
+  reviewed: boolean;
 }
 
 export interface GuardrailTestResult {
@@ -699,6 +738,12 @@ export const api = {
         method: "PUT",
         body: JSON.stringify({ rule_set_ids: ruleSetIds }),
       }),
+    unreadCount: () => req<{ count: number; latest_hit_id: number }>("/api/guardrails/unread-count"),
+    hitGroups: (unreadOnly = false) =>
+      req<{ items: GuardrailHitGroup[]; unread_total: number }>(`/api/guardrails/hits?limit=50${unreadOnly ? "&unread_only=true" : ""}`),
+    hitItems: (usageId: number) => req<{ items: GuardrailHit[]; retention_days: number }>(`/api/guardrails/hits/items?usage_id=${usageId}&limit=50`),
+    reviewHits: (body: { up_to_id: number; key_id?: number; rule_id?: number | null; action?: GuardrailAction }) =>
+      req<{ reviewed: number }>("/api/guardrails/hits/review", { method: "POST", body: JSON.stringify(body) }),
     test: (body: { kind: GuardrailKind; pattern?: string | null; preset_id?: string | null; whole_word?: boolean; text: string }) =>
       req<GuardrailTestResult>("/api/guardrails/test", { method: "POST", body: JSON.stringify(body) }),
   },

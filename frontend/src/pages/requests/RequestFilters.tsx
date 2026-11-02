@@ -73,6 +73,15 @@ export function RequestFilters({
           <option value="blocked">Blocked</option>
         </select>
       </Field>
+      <Field label="Content rules">
+        <select className={FIELD} value={get("guardrail")} onChange={(e) => set("guardrail", e.target.value)}>
+          <option value="">All</option>
+          <option value="any">Matched a rule</option>
+          <option value="blocked">Blocked by a rule</option>
+          <option value="flagged">Flagged by a rule</option>
+          <option value="unchecked">Not fully checked</option>
+        </select>
+      </Field>
       <Field label="From">
         <input type="date" className={FIELD} value={get("start").slice(0, 10)} onChange={(e) => set("start", e.target.value)} />
       </Field>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
+import { NotificationBell } from "./NotificationBell";
 import { IconButton } from "./ui/Button";
 import { Logo } from "./ui/Logo";
 
@@ -76,7 +77,7 @@ function MenuIcon({ open }: { open: boolean }) {
 }
 
 export function Layout({ children }: { children: ReactNode }) {
-  const { workspace } = useAuth();
+  const { workspace, isWorkspaceAdmin } = useAuth();
   const links = useNavLinks();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -142,6 +143,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 </NavLink>
               ))}
             </nav>
+            {isWorkspaceAdmin && <NotificationBell />}
             <ThemeToggle />
             {collapses && (
               <IconButton

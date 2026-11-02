@@ -7,6 +7,7 @@ import { num, providerName, relTime } from "../../lib/format";
 import { cn } from "../../lib/cn";
 import { CopyButton } from "../../components/ui/CopyButton";
 import { Section, SectionLevel, StoredContentSections } from "./content";
+import { GuardrailSection } from "./GuardrailSection";
 import { ProviderDot, RowCost, StatusBadge, seconds } from "./parts";
 
 const STEP = "aria-disabled:cursor-not-allowed aria-disabled:opacity-40";
@@ -117,6 +118,7 @@ export function RequestInspector({
 }) {
   const body = (
     <>
+      {row.guardrail && <GuardrailSection row={row} />}
       {row.has_content && <StoredContentSections content={content} error={contentError} usageId={row.id} />}
       {/* The old LOG_BODIES previews: only shown when one actually exists (the flag is off in production). */}
       {(row.prompt_preview != null || row.response_preview != null) && (

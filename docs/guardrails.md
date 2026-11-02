@@ -1,8 +1,8 @@
 # Guardrails (content rules on virtual keys)
 
-> Status: the engine, gateway wiring, admin API and the Guardrails tab are in place but **off**
-> (`GUARDRAILS_ENABLED=false`). Rules can be created and attached while the flag is off (the UI says plainly that
-> nothing is enforced yet). The notification bell and the red Requests rows come in a later PR.
+> Status: the engine, gateway wiring, admin API and the whole UI (Guardrails tab, notification bell, Requests rows and
+> inspector) are in place but **off** (`GUARDRAILS_ENABLED=false`). Rules can be created and attached while the flag is off
+> (the UI says plainly that nothing is enforced yet).
 
 ## Where it is in the UI
 
@@ -72,6 +72,17 @@ database work for evidence until the hour ends.
 **Retention**: after `GUARDRAIL_RETENTION_DAYS` (30) the whole hit row (snippet included) and blocked usage rows are
 deleted (at startup and at most hourly afterwards). A flagged request's ordinary usage row stays. `CONTENT_RETENTION_DAYS`
 is not involved.
+
+### Notifications and Requests
+
+- **Bell** (header, workspace admins): the number is the unread matches (`aria-label` "Notifications, N unread", shown as
+  99+ above 99). It is read once, every minute while the page is visible and when the window regains focus; a failed read
+  keeps the last number. Opening it lists matches grouped by key and rule (action and counts as text), links each group to
+  the matching Requests, and offers **Mark reviewed** per group or **Mark all reviewed**, which only covers what the list
+  showed (a match that arrives meanwhile stays unread). Read state is workspace-wide.
+- **Requests**: rows a rule blocked or flagged are tinted red and say why in words ("Blocked" + "Rule: x", "Flagged: x");
+  "Not fully checked" (fail-open) is a neutral badge, not an alarm. A **Content rules** filter (`?guardrail=`) and an
+  inspector section (what happened, each matching rule, the redacted context, retention) complete it.
 
 ## Limits (`config.py`)
 
