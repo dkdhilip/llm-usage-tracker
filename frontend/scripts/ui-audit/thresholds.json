@@ -28,6 +28,7 @@
     "createKeyDrawer",
     "keysTableFitsDesktop",
     "guardrailsFlow",
+    "guardrailBellAndRequests",
     "workspaceAccessible",
     "playgroundFlow",
     "playgroundAccessible",

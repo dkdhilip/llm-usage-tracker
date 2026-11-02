@@ -7,7 +7,7 @@ import { ScrollRegion } from "../../components/ui/ScrollRegion";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { cn } from "../../lib/cn";
 import { num, relTime } from "../../lib/format";
-import { ProviderDot, RowCost, StatusBadge, seconds } from "./parts";
+import { GuardrailBadge, ProviderDot, RowCost, StatusBadge, isRuleRow, seconds } from "./parts";
 
 const TH = "sticky top-0 z-10 bg-surface py-2 pr-3 text-left text-meta font-medium uppercase tracking-wide text-fg-muted";
 
@@ -81,7 +81,7 @@ export function RequestList({
         ) : phone ? (
           <ul className="divide-y divide-line" aria-label="Requests">
             {rows.map((r) => (
-              <li key={r.id}>
+              <li key={r.id} className={cn(isRuleRow(r) && "rounded-md bg-danger-soft px-2")} data-rule-row={isRuleRow(r) ? r.guardrail : undefined}>
                 <button
                   type="button"
                   data-request-row={r.id}
@@ -95,6 +95,7 @@ export function RequestList({
                     </span>
                     <StatusBadge status={r.status} />
                   </span>
+                  <GuardrailBadge row={r} />
                   <span className="mt-0.5 block text-sm text-fg-muted">
                     {r.key_label} · {relTime(r.ts)}
                     {r.has_content && <ContentMarker />}
@@ -138,10 +139,11 @@ export function RequestList({
                           onOpen(r);
                         }
                       }}
+                      data-rule-row={isRuleRow(r) ? r.guardrail : undefined}
                       className={cn(
-                        "cursor-pointer border-b border-line last:border-0 hover:bg-fill",
+                        "cursor-pointer border-b border-line last:border-0",
                         "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-text",
-                        selected && "bg-brand-soft",
+                        selected ? "bg-brand-soft" : isRuleRow(r) ? "bg-danger-soft hover:bg-danger-soft" : "hover:bg-fill",
                       )}
                     >
                       <td className="whitespace-nowrap py-2 pr-3 text-fg-muted" title={new Date(r.ts).toLocaleString()}>
@@ -157,6 +159,7 @@ export function RequestList({
                       </td>
                       <td className="py-2 pr-3">
                         <StatusBadge status={r.status} />
+                        <GuardrailBadge row={r} />
                       </td>
                       {showTokens && <td className="py-2 pr-3 text-right tabular-nums">{num(r.total_tokens)}</td>}
                       <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">{seconds(r.latency_ms)}</td>

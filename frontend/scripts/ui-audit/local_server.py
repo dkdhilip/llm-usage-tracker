@@ -17,6 +17,7 @@ os.environ.update(
     ENVIRONMENT="development",
     OPENAI_API_KEY="", ANTHROPIC_API_KEY="", OPENROUTER_API_KEY="", GEMINI_API_KEY="",
     SIGNUPS_PER_IP_PER_HOUR="1000", JOINS_PER_IP_PER_HOUR="1000",
+    GUARDRAILS_ENABLED="true",  # so the seeded rules really block/flag and produce matches for the bell and Requests
 )
 
 

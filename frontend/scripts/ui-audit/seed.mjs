@@ -84,6 +84,15 @@ for (const [i, content] of prompts.entries()) {
   });
 }
 
+// requests that match the rules on support-bot: one blocked (a card number) and two flagged (the codename)
+for (const content of ["Please charge card 4111 1111 1111 1111 for the renewal.", "Status of the bluefalcon launch?", "Draft an update about bluefalcon for the team."]) {
+  await fetch(`${BASE}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${creds.keys["support-bot"].raw}` },
+    body: JSON.stringify({ model: "openai/gpt-4o-mini", messages: [{ role: "user", content }] }),
+  });
+}
+
 // an empty workspace (empty states) and a user with no workspace (Get started)
 const empty = await actor("emptyadmin");
 await empty.call("POST", "/api/workspace", { name: "Empty Co" });
