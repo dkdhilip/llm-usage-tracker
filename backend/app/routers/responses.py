@@ -21,6 +21,7 @@ from app.gateway import (
     authorize_model,
     authorize_provider,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     require_live_ready,
@@ -57,6 +58,7 @@ def responses(
         enforce_budget(db, vk)
         enforce_workspace_cap(db, vk, _PROVIDER)
         api_key = require_live_ready(db, vk, _PROVIDER)  # 403 paused / 402 no key
+        guard = enforce_guardrails(db, vk, "responses", body, _PROVIDER, model)
         response = run_native_completion(
             db,
             vk,
@@ -70,6 +72,7 @@ def responses(
             body=body,
             idem=idem,
             capture=content_capture.begin(db, vk, "responses", body),
+            guard=guard,
         )
         return JSONResponse(response)
 
@@ -77,6 +80,7 @@ def responses(
     enforce_budget(db, vk)
     enforce_workspace_cap(db, vk, _PROVIDER)
     api_key = require_live_ready(db, vk, _PROVIDER)  # 403 paused / 402 no key
+    guard = enforce_guardrails(db, vk, "responses", body, _PROVIDER, model)
     idem = idempotency.claim_streaming(
         db, vk, header=idempotency_key,
         endpoint="/v1/responses:stream", provider=_PROVIDER, model=model, body_material=body,
@@ -93,6 +97,7 @@ def responses(
             body=body,
             idem_record_id=idem.record_id,
             capture=content_capture.begin(db, vk, "responses", body),
+            guard=guard,
         ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},

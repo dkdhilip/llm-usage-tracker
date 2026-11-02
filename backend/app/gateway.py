@@ -18,7 +18,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import content_capture, idempotency, providers, ratelimit
+from app import content_capture, guardrails, idempotency, providers, ratelimit
 from app.adapters.base import UsageInfo
 from app.config import settings
 from app.db import SessionLocal
@@ -431,6 +431,7 @@ def run_completion(
     model: str,
     prompt: str,
     capture: "content_capture.ContentCapture | None" = None,
+    guard: "guardrails.GuardResult | None" = None,
 ) -> CompletionResult:
     key = require_live_ready(db, vk, provider)
     t0 = time.perf_counter()
@@ -450,7 +451,7 @@ def run_completion(
         failed = CompletionResult(
             f"[{provider} call failed: HTTP {status_code}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt, failed, status="error", capture=capture)
+        record_usage(db, vk, provider, model, prompt, failed, status="error", capture=capture, guard=guard)
         raise HTTPException(
             status_code=status_code,
             detail={
@@ -467,7 +468,7 @@ def run_completion(
         failed = CompletionResult(
             f"[{provider} call failed: {exc}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt, failed, status="error", capture=capture)
+        record_usage(db, vk, provider, model, prompt, failed, status="error", capture=capture, guard=guard)
         raise HTTPException(
             status_code=502,
             detail={
@@ -497,6 +498,7 @@ def run_native_completion(
     body: dict,
     idem: Idem | None = None,
     capture: "content_capture.ContentCapture | None" = None,
+    guard: "guardrails.GuardResult | None" = None,
 ) -> dict:
     """For the provider-native passthrough endpoints (/v1/messages,
     /v1/responses, and the full-fidelity branch of /v1/chat/completions):
@@ -524,7 +526,7 @@ def run_native_completion(
         failed = CompletionResult(
             f"[{provider} call failed: HTTP {status_code}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture, guard=guard)
         _idem_after_upstream_error(idem, status_code, exc.response)
         raise UpstreamHTTPError(
             status_code, exc.response.content, exc.response.headers.get("content-type")
@@ -537,7 +539,7 @@ def run_native_completion(
         failed = CompletionResult(
             f"[{provider} call failed: {exc}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture, guard=guard)
         if idem is not None and idem.enabled:
             idempotency.release(idem)  # transport failure => never poison the key
         raise HTTPException(
@@ -557,7 +559,7 @@ def run_native_completion(
     if capture is not None:
         capture.set_response_json(response)
     row = record_usage(
-        db, vk, provider, model, prompt_preview, result, request_id=response.get("id"), capture=capture
+        db, vk, provider, model, prompt_preview, result, request_id=response.get("id"), capture=capture, guard=guard
     )
     if idem is not None and idem.enabled:
         idempotency.finalize_json(idem, response, usage_log_id=row.id)
@@ -577,6 +579,7 @@ def run_native_completion_raw(
     api_key: str,
     idem: Idem | None = None,
     capture: "content_capture.ContentCapture | None" = None,
+    guard: "guardrails.GuardResult | None" = None,
 ) -> tuple[bytes, str]:
     """The binary/multipart counterpart of run_native_completion, for the
     audio endpoints: a request that isn't a JSON body (transcription takes a
@@ -599,7 +602,7 @@ def run_native_completion_raw(
         failed = CompletionResult(
             f"[{provider} call failed: HTTP {status_code}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture, guard=guard)
         _idem_after_upstream_error(idem, status_code, exc.response)
         raise UpstreamHTTPError(
             status_code, exc.response.content, exc.response.headers.get("content-type")
@@ -610,7 +613,7 @@ def run_native_completion_raw(
         failed = CompletionResult(
             f"[{provider} call failed: {exc}]", 0, 0, 0.0, "configured", latency_ms
         )
-        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture)
+        record_usage(db, vk, provider, model, prompt_preview, failed, status="error", capture=capture, guard=guard)
         if idem is not None and idem.enabled:
             idempotency.release(idem)  # transport failure => never poison the key
         raise HTTPException(
@@ -628,7 +631,7 @@ def run_native_completion_raw(
     result = completion_result_from_usage(usage, provider, model, latency_ms, text=text)
     if capture is not None:
         capture.set_response_bytes(content, content_type)
-    row = record_usage(db, vk, provider, model, prompt_preview, result, capture=capture)
+    row = record_usage(db, vk, provider, model, prompt_preview, result, capture=capture, guard=guard)
     if idem is not None and idem.enabled:
         idempotency.finalize(
             idem,
@@ -653,6 +656,7 @@ def stream_native_passthrough(
     body: dict,
     idem_record_id: int | None = None,
     capture: "content_capture.ContentCapture | None" = None,
+    guard: "guardrails.GuardResult | None" = None,
 ) -> Iterator[str]:
     """For the provider-native streaming endpoints: re-emits every line from
     `stream_fn` verbatim (byte-for-byte SSE passthrough, no buffering) while an
@@ -707,7 +711,7 @@ def stream_native_passthrough(
     result = completion_result_from_usage(acc.usage(), provider, model, latency_ms)
     if capture is not None and status == "success":  # a failed stream stores the request only
         capture.finish_stream()
-    record_usage_detached(vk_id, provider, model, prompt_preview, result, status=status, capture=capture)
+    record_usage_detached(vk_id, provider, model, prompt_preview, result, status=status, capture=capture, guard=guard)
     idempotency.release_detached(idem_record_id)  # end of stream => drop the concurrency lock
 
 
@@ -740,6 +744,7 @@ def record_usage(
     request_id: str | None = None,
     status: str = "success",
     capture: "content_capture.ContentCapture | None" = None,
+    guard: "guardrails.GuardResult | None" = None,
 ) -> UsageLog:
     """Writes the usage_logs row — the one place every code path (native +
     legacy, streaming + non-streaming) converges before persisting, so it's
@@ -785,9 +790,13 @@ def record_usage(
         status=status,
         prompt_preview=_preview(prompt) if settings.LOG_BODIES else None,
         response_preview=_preview(result.text) if settings.LOG_BODIES else None,
+        guardrail=guard.marker if guard is not None else None,
     )
     db.add(row)
     vk.last_used_at = datetime.now(UTC)
+    if guard is not None and guard.hits:
+        db.flush()  # the hits point at this row; they commit with it, in a savepoint (a failure drops only them)
+        guardrails.write_flag_evidence(db, vk, row, guard)
     db.commit()
     db.refresh(row)
     if capture is not None:
@@ -807,6 +816,7 @@ def record_usage_detached(
     request_id: str | None = None,
     status: str = "success",
     capture: "content_capture.ContentCapture | None" = None,
+    guard: "guardrails.GuardResult | None" = None,
 ) -> None:
     """Same as record_usage but opens its own session — for the streaming path,
     which finishes writing after the request's session has been torn down."""
@@ -816,5 +826,10 @@ def record_usage_detached(
             return
         record_usage(
             db, vk, provider, model, prompt, result,
-            request_id=request_id, status=status, capture=capture,
+            request_id=request_id, status=status, capture=capture, guard=guard,
         )
+
+
+def enforce_guardrails(db: Session, vk: VirtualKey, kind: str, body, provider: str, model: str) -> "guardrails.GuardResult":
+    """Re-exported so every route imports its gateway hooks from one place (see app.guardrails for the contract)."""
+    return guardrails.enforce_guardrails(db, vk, kind, body, provider, model)

@@ -31,6 +31,7 @@ from app.gateway import (
     authorize_model,
     authorize_provider,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     require_live_ready,
@@ -69,6 +70,7 @@ def messages(
         enforce_budget(db, vk)
         enforce_workspace_cap(db, vk, _PROVIDER)
         api_key = require_live_ready(db, vk, _PROVIDER)  # 403 paused / 402 no key
+        guard = enforce_guardrails(db, vk, "messages", body, _PROVIDER, model)
         response = run_native_completion(
             db,
             vk,
@@ -82,6 +84,7 @@ def messages(
             body=body,
             idem=idem,
             capture=content_capture.begin(db, vk, "messages", body),
+            guard=guard,
         )
         return JSONResponse(response)
 
@@ -89,6 +92,7 @@ def messages(
     enforce_budget(db, vk)
     enforce_workspace_cap(db, vk, _PROVIDER)
     api_key = require_live_ready(db, vk, _PROVIDER)  # 403 paused / 402 no key
+    guard = enforce_guardrails(db, vk, "messages", body, _PROVIDER, model)
     # Streaming: concurrency guard only (no replay). Claimed after governance so a
     # rejected request leaves no lock; released when the stream ends.
     idem = idempotency.claim_streaming(
@@ -107,6 +111,7 @@ def messages(
             body=body,
             idem_record_id=idem.record_id,
             capture=content_capture.begin(db, vk, "messages", body),
+            guard=guard,
         ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},

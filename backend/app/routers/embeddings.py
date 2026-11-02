@@ -22,6 +22,7 @@ from app.gateway import (
     authorize_model,
     authorize_provider,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     require_live_ready,
@@ -55,6 +56,7 @@ def create_embeddings(
     enforce_budget(db, vk)
     enforce_workspace_cap(db, vk, _PROVIDER)
     api_key = require_live_ready(db, vk, _PROVIDER)  # 403 paused / 402 no key
+    guard = enforce_guardrails(db, vk, "embedding", body, _PROVIDER, model)
 
     response = run_native_completion(
         db,
@@ -69,5 +71,6 @@ def create_embeddings(
         body=body,
         idem=idem,
         capture=content_capture.begin(db, vk, "embedding", body),
+        guard=guard,
     )
     return JSONResponse(response)

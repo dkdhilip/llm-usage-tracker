@@ -32,6 +32,7 @@ from app.gateway import (
     authorize_model,
     authorize_provider,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     require_live_ready,
@@ -78,6 +79,7 @@ def generate_content(
         endpoint="/v1beta/models:generateContent", provider=_PROVIDER, model=model, body_material=body,
     )
     api_key = _govern_and_key(db, vk)
+    guard = enforce_guardrails(db, vk, "gemini", body, _PROVIDER, model)
 
     response = run_native_completion(
         db,
@@ -92,6 +94,7 @@ def generate_content(
         body=body,
         idem=idem,
         capture=content_capture.begin(db, vk, "gemini", body, model=model),
+        guard=guard,
     )
     return JSONResponse(response)
 
@@ -106,6 +109,7 @@ def stream_generate_content(
 ):
     _authorize_acl(vk, model)
     api_key = _govern_and_key(db, vk)
+    guard = enforce_guardrails(db, vk, "gemini", body, _PROVIDER, model)
     idem = idempotency.claim_streaming(
         db, vk, header=idempotency_key,
         endpoint="/v1beta/models:streamGenerateContent", provider=_PROVIDER, model=model, body_material=body,
@@ -123,6 +127,7 @@ def stream_generate_content(
             body=body,
             idem_record_id=idem.record_id,
             capture=content_capture.begin(db, vk, "gemini", body, model=model),
+            guard=guard,
         ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
@@ -143,6 +148,7 @@ def embed_content(
         endpoint="/v1beta/models:embedContent", provider=_PROVIDER, model=model, body_material=body,
     )
     api_key = _govern_and_key(db, vk)
+    guard = enforce_guardrails(db, vk, "embedding", body, _PROVIDER, model)
 
     response = run_native_completion(
         db,
@@ -157,6 +163,7 @@ def embed_content(
         body=body,
         idem=idem,
         capture=content_capture.begin(db, vk, "embedding", body, model=model),
+        guard=guard,
     )
     return JSONResponse(response)
 
@@ -175,6 +182,7 @@ def batch_embed_contents(
         endpoint="/v1beta/models:batchEmbedContents", provider=_PROVIDER, model=model, body_material=body,
     )
     api_key = _govern_and_key(db, vk)
+    guard = enforce_guardrails(db, vk, "embedding", body, _PROVIDER, model)
 
     response = run_native_completion(
         db,
@@ -189,5 +197,6 @@ def batch_embed_contents(
         body=body,
         idem=idem,
         capture=content_capture.begin(db, vk, "embedding", body, model=model),
+        guard=guard,
     )
     return JSONResponse(response)

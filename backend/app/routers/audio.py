@@ -42,6 +42,7 @@ from app.gateway import (
     authorize_model,
     authorize_provider,
     enforce_budget,
+    enforce_guardrails,
     enforce_workspace_cap,
     enforce_workspace_quota,
     require_live_ready,
@@ -106,6 +107,7 @@ def create_transcription(
         extra=file_bytes,
     )
     api_key = _govern_and_key(db, vk)
+    guard = enforce_guardrails(db, vk, "transcription", {"prompt": prompt}, _PROVIDER, model)
 
     content, content_type = run_native_completion_raw(
         db,
@@ -120,6 +122,7 @@ def create_transcription(
         prompt_preview=openai_adapter.transcription_request_preview(form_fields, filename),
         api_key=api_key,
         idem=idem,
+        guard=guard,
         # the audio itself is never captured: only its name and size, plus the optional text prompt
         capture=content_capture.begin(
             db, vk, "transcription",
@@ -145,6 +148,7 @@ def create_speech(
         endpoint="/v1/audio/speech", provider=_PROVIDER, model=model, body_material=body,
     )
     api_key = _govern_and_key(db, vk)
+    guard = enforce_guardrails(db, vk, "speech", body, _PROVIDER, model)
 
     content, content_type = run_native_completion_raw(
         db,
@@ -156,6 +160,7 @@ def create_speech(
         prompt_preview=openai_adapter.prompt_preview(body),
         api_key=api_key,
         idem=idem,
+        guard=guard,
         capture=content_capture.begin(db, vk, "speech", body),
     )
     return Response(content=content, media_type=content_type)
