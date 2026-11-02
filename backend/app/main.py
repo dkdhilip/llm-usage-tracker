@@ -29,6 +29,7 @@ from app.routers import (
     usage,
     workspace,
 )
+from app.routers import guardrails as guardrails_router
 from app.routers import providers as providers_router
 from app.routers import requests as requests_router
 
@@ -147,6 +148,7 @@ app.include_router(embeddings.router)
 app.include_router(images.router)
 app.include_router(audio.router)
 app.include_router(gemini.router)
+app.include_router(guardrails_router.router)
 app.include_router(providers_router.router)
 app.include_router(requests_router.router)
 app.include_router(usage.router)

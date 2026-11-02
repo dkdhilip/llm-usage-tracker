@@ -898,3 +898,102 @@ def cleanup_expired_startup() -> None:
     global _last_sweep
     _last_sweep = time.monotonic()
     _run_sweep()
+
+
+# --------------------------------------------------------------------- admin-side helpers (used by the API)
+
+PRESETS = {
+    "card": ("Payment card numbers", "13-19 digit card numbers that pass the Luhn check. No snippet is stored."),
+    "api_key": ("API keys and tokens", "Common provider key shapes (sk-, vk_, ghp_, AKIA, JWT...). No snippet is stored."),
+    "private_key": ("Private keys", "PEM private key headers. No snippet is stored."),
+    "email": ("Email addresses", "Anything shaped like name@domain.tld. No snippet is stored."),
+}
+_PROBES = ["a" * 64 + "!", "a " * 40 + "!", "x" * 300, "ab" * 120 + "c", "(" * 40, "a" * 60 + "b", "0" * 200 + "x", " " * 200 + "z"]
+
+
+def validate_rule_input(kind: str, pattern: str | None, preset_id: str | None) -> tuple[str | None, str | None]:
+    """Check a rule an admin is saving. Returns the cleaned (pattern, preset_id) or raises ValueError with a message
+    that is safe to show. A regex is compiled and run against adversarial probes under the per-match timeout, so a
+    pattern that could stall the gateway is refused at save time, not discovered at request time."""
+    limit = settings.GUARDRAIL_MAX_PATTERN_CHARS
+    if kind == "preset":
+        if preset_id not in PRESETS:
+            raise ValueError("unknown built-in detector")
+        return None, preset_id
+    p = (pattern or "").strip() if kind == "phrase" else (pattern or "")
+    if not p:
+        raise ValueError("pattern is required")
+    if len(p) > limit:
+        raise ValueError(f"pattern is too long (max {limit} characters)")
+    if kind == "phrase":
+        if not _fold(p):
+            raise ValueError("pattern has no visible characters")
+        return p, None
+    try:
+        compiled = rx.compile(p)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"invalid regular expression ({type(exc).__name__})") from None
+    try:
+        if compiled.fullmatch("") is not None or compiled.search("") is not None:
+            raise ValueError("pattern matches empty text")
+        timeout = settings.GUARDRAIL_REGEX_TIMEOUT_MS / 1000.0
+        for probe in _PROBES:
+            list(compiled.finditer(probe, timeout=timeout))
+    except TimeoutError:
+        raise ValueError("pattern is too slow (it could stall requests); simplify it") from None
+    return p, None
+
+
+def audit(db: Session, workspace_id: int, actor_user_id: int | None, action: str, target_type: str,
+          target_id: int | str | None, detail: dict | None = None) -> None:
+    """Record an administrative change (caller commits). Detail holds ids, names and counts: never prompt text."""
+    db.add(AuditEvent(workspace_id=workspace_id, actor_user_id=actor_user_id, action=action, target_type=target_type,
+                      target_id=None if target_id is None else str(target_id), detail=detail or {}))
+
+
+def enabled_rule_counts(db: Session, key_ids: list[int]) -> dict[int, int]:
+    """Enabled rules in enabled sets that apply to each key (what the per-key limit is about)."""
+    if not key_ids:
+        return {}
+    rows = db.execute(
+        select(KeyGuardrailSet.key_id, func.count(GuardrailRule.id))
+        .join(GuardrailRuleSet, GuardrailRuleSet.id == KeyGuardrailSet.rule_set_id)
+        .join(GuardrailRule, GuardrailRule.rule_set_id == GuardrailRuleSet.id)
+        .where(KeyGuardrailSet.key_id.in_(key_ids), GuardrailRuleSet.enabled.is_(True), GuardrailRule.enabled.is_(True))
+        .group_by(KeyGuardrailSet.key_id)
+    ).all()
+    return {k: n for k, n in rows}
+
+
+def check_key_rule_limit(db: Session, key_ids: list[int]) -> None:
+    for n in enabled_rule_counts(db, key_ids).values():
+        if n > settings.GUARDRAIL_MAX_RULES_PER_KEY:
+            raise ValueError(f"a key can have at most {settings.GUARDRAIL_MAX_RULES_PER_KEY} active rules (this would make {n})")
+
+
+def keys_of_set(db: Session, rule_set_id: int) -> list[int]:
+    return list(db.scalars(select(KeyGuardrailSet.key_id).where(KeyGuardrailSet.rule_set_id == rule_set_id)))
+
+
+def resync_key_flags(db: Session, key_ids: list[int]) -> None:
+    """Recompute `has_guardrails` for keys whose attachments may have changed (e.g. a rule set was deleted)."""
+    for kid in key_ids:
+        vk = db.get(VirtualKey, kid)
+        if vk is not None:
+            vk.has_guardrails = bool(db.scalar(select(func.count()).select_from(KeyGuardrailSet).where(KeyGuardrailSet.key_id == kid)))
+
+
+def set_key_rule_sets(db: Session, vk: VirtualKey, set_ids: list[int], actor_user_id: int | None) -> bool:
+    """Attach exactly these rule sets to a key (validated, audited, version bumped; caller commits). Returns whether
+    anything changed. Raises ValueError with a message safe to show."""
+    new = sorted(set(set_ids))
+    old = sorted(db.scalars(select(KeyGuardrailSet.rule_set_id).where(KeyGuardrailSet.key_id == vk.id)))
+    if new == old:
+        return False
+    attach_rule_sets(db, vk, new)
+    db.flush()
+    check_key_rule_limit(db, [vk.id])
+    added, removed = sorted(set(new) - set(old)), sorted(set(old) - set(new))
+    audit(db, vk.workspace_id, actor_user_id, "key.guardrails.attach" if new else "key.guardrails.detach", "key", vk.id,
+          {"key": vk.label, "added_set_ids": added, "removed_set_ids": removed})
+    return True

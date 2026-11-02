@@ -15,7 +15,14 @@ from sqlalchemy.orm import Session
 from app import content_capture, content_images
 from app.config import settings
 from app.db import get_db
-from app.models import UsageContent, UsageContentImage, UsageLog, VirtualKey, Workspace
+from app.models import (
+    GuardrailHit,
+    UsageContent,
+    UsageContentImage,
+    UsageLog,
+    VirtualKey,
+    Workspace,
+)
 from app.scoping import Viewer, scope_usage
 from app.workspace import require_workspace_admin
 
@@ -32,6 +39,7 @@ def list_requests(
     model: str | None = None,
     key_id: int | None = None,
     status: str | None = None,
+    guardrail: str | None = None,  # any | flagged | blocked | unchecked
     start: datetime | None = None,
     end: datetime | None = None,
     db: Session = Depends(get_db),
@@ -59,6 +67,10 @@ def list_requests(
         stmt = stmt.where(UsageLog.key_id == key_id)
     if status:
         stmt = stmt.where(UsageLog.status == status)
+    if guardrail == "any":
+        stmt = stmt.where(UsageLog.guardrail.is_not(None))
+    elif guardrail:
+        stmt = stmt.where(UsageLog.guardrail == guardrail)
 
     rows = db.execute(stmt).all()
     has_more = len(rows) > limit
@@ -80,6 +92,14 @@ def list_requests(
         if ids
         else set()
     )
+    rules_by_usage: dict[int, list[dict]] = {}
+    if ids:  # which rules matched (unexpired hits only; a hit past its retention is gone from every read)
+        for uid, name, action in db.execute(
+            select(GuardrailHit.usage_log_id, GuardrailHit.rule_name, GuardrailHit.action)
+            .where(GuardrailHit.usage_log_id.in_(ids), GuardrailHit.workspace_id == v.workspace_id, GuardrailHit.expires_at > func.now())
+            .order_by(GuardrailHit.usage_log_id, GuardrailHit.ordinal)
+        ):
+            rules_by_usage.setdefault(uid, []).append({"rule_name": name, "action": action})
     if cursor is None:
         content_capture.cleanup_expired(db)  # opportunistic physical deletion, on first-page loads only
 
@@ -105,6 +125,7 @@ def list_requests(
             "status": u.status,
             # null for every ordinary request; "flagged" | "blocked" | "unchecked" once a content rule applies
             "guardrail": u.guardrail,
+            "guardrail_rules": rules_by_usage.get(u.id, []),
             "prompt_preview": u.prompt_preview,
             "response_preview": u.response_preview,
             "has_content": u.id in with_content,
