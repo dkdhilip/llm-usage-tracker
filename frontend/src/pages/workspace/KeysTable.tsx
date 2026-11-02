@@ -1,5 +1,5 @@
 import { Fragment, useRef, type ReactNode } from "react";
-import type { KeyRow } from "../../lib/api";
+import type { GuardrailRuleSet, KeyRow } from "../../lib/api";
 import { ConnectPanel } from "../../components/ConnectPanel";
 import { CostCell } from "../../components/CostCell";
 import { Badge } from "../../components/ui/Badge";
@@ -10,6 +10,7 @@ import { providerColor } from "../../lib/chartColors";
 import { keyStatus } from "../../lib/keyOptions";
 import { num, providerName, usd } from "../../lib/format";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
+import { KeyRulesEditor, KeyRulesPill } from "./guardrails/KeyRules";
 import { KeyLoggingEditor, KeyLoggingPill } from "./KeyLogging";
 
 export interface KeyActions {
@@ -27,6 +28,12 @@ export interface KeyActions {
   retentionDays: number;
   configured: string[];
   onChange: () => void;
+  /** content rules: undefined until they have loaded (nothing about them is shown then) */
+  ruleSets?: GuardrailRuleSet[];
+  rulesEnforced?: boolean;
+  maxSetsPerKey?: number;
+  rulesId?: number | null;
+  onRules?: (id: number) => void;
 }
 
 function KeyName({ k }: { k: KeyRow }) {
@@ -145,6 +152,7 @@ function KeyMenu({ k, a }: { k: KeyRow; a: KeyActions }) {
         {s === "active" && (
           <>
             <MenuItem onSelect={() => a.onLogging(k.id)}>Logging settings</MenuItem>
+            {a.ruleSets && a.onRules && <MenuItem onSelect={() => a.onRules?.(k.id)}>Content rules</MenuItem>}
             <MenuItem disabled={!k.allow_live && !a.canResume(k)} onSelect={() => a.onPause(k)}>
               {k.allow_live ? "Pause key" : "Resume key"}
             </MenuItem>
@@ -177,6 +185,11 @@ function ConnectButton({ k, a }: { k: KeyRow; a: KeyActions }) {
 function loggingPanel(k: KeyRow, a: KeyActions): ReactNode {
   if (a.loggingId !== k.id || keyStatus(k) !== "active") return null;
   return <KeyLoggingEditor k={k} masterText={a.masterText} masterImages={a.masterImages} retentionDays={a.retentionDays} onChange={a.onChange} />;
+}
+
+function rulesPanel(k: KeyRow, a: KeyActions): ReactNode {
+  if (!a.ruleSets || a.rulesId !== k.id || keyStatus(k) !== "active") return null;
+  return <KeyRulesEditor k={k} ruleSets={a.ruleSets} enforced={a.rulesEnforced} maxSets={a.maxSetsPerKey ?? 5} onChange={a.onChange} />;
 }
 
 function connectPanel(k: KeyRow, a: KeyActions): ReactNode {
@@ -225,7 +238,13 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
               <ConnectButton k={k} a={a} />
               <KeyMenu k={k} a={a} />
             </div>
+            {a.ruleSets && a.ruleSets.length > 0 && (
+              <div className="mt-2 flex items-center gap-1.5 text-sm text-fg-muted">
+                Content rules: <KeyRulesPill k={k} ruleSets={a.ruleSets} enforced={a.rulesEnforced} />
+              </div>
+            )}
             {loggingPanel(k, a) && <div className="mt-3 rounded-md bg-surface-2 p-3">{loggingPanel(k, a)}</div>}
+            {rulesPanel(k, a) && <div className="mt-3 rounded-md bg-surface-2 p-3">{rulesPanel(k, a)}</div>}
             {connectPanel(k, a) && <div className="mt-3 rounded-md bg-surface-2 p-3">{connectPanel(k, a)}</div>}
           </li>
         ))}
@@ -233,6 +252,8 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
     );
   }
 
+  const showRules = !!a.ruleSets && a.ruleSets.length > 0;
+  const cols = 9;
   return (
     <ScrollRegion label="Virtual keys table">
       <table className="w-full min-w-[62rem] text-sm">
@@ -254,6 +275,7 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
         <tbody>
           {keys.map((k) => {
             const logging = loggingPanel(k, a);
+            const rules = rulesPanel(k, a);
             const connect = connectPanel(k, a);
             const muted = keyStatus(k) !== "active";
             return (
@@ -261,6 +283,11 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
                 <tr className={`border-b border-line last:border-0 ${muted ? "text-fg-muted" : ""}`}>
                   <td className="py-2.5 pr-3">
                     <KeyName k={k} />
+                    {showRules && (k.guardrail_rule_set_ids ?? []).length > 0 && (
+                      <div className="mt-1 flex items-center gap-1 text-xs text-fg-muted" data-testid={`key-rules-${k.id}`}>
+                        Rules: <KeyRulesPill k={k} ruleSets={a.ruleSets ?? []} enforced={a.rulesEnforced} />
+                      </div>
+                    )}
                   </td>
                   <td className="py-2.5 pr-3">
                     <Owner name={k.assigned_username} />
@@ -290,14 +317,21 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
                 </tr>
                 {logging && (
                   <tr className="border-b border-line bg-surface-2">
-                    <td colSpan={9} className="px-4 py-3">
+                    <td colSpan={cols} className="px-4 py-3">
                       {logging}
+                    </td>
+                  </tr>
+                )}
+                {rules && (
+                  <tr className="border-b border-line bg-surface-2">
+                    <td colSpan={cols} className="px-4 py-3">
+                      {rules}
                     </td>
                   </tr>
                 )}
                 {connect && (
                   <tr className="border-b border-line bg-surface-2">
-                    <td colSpan={9} className="px-4 py-4">
+                    <td colSpan={cols} className="px-4 py-4">
                       {connect}
                     </td>
                   </tr>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { api, type KeyRow, type WorkspaceDetail } from "../lib/api";
+import { api, type GuardrailRuleSets, type KeyRow, type WorkspaceDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { keyStatus } from "../lib/keyOptions";
 import { Badge } from "../components/ui/Badge";
@@ -9,12 +9,13 @@ import { InlineAlert } from "../components/ui/InlineAlert";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tab, TabList, TabPanel, Tabs } from "../components/ui/Tabs";
 import { ContentLoggingCard } from "./workspace/ContentLoggingCard";
+import { GuardrailsTab } from "./workspace/guardrails/GuardrailsTab";
 import { KeysTab } from "./workspace/KeysTab";
 import { MembersCard } from "./workspace/MembersCard";
 import { ProvidersCard } from "./workspace/ProvidersCard";
 import { SettingsCard } from "./workspace/SettingsCard";
 
-const TABS = ["keys", "providers", "team", "settings"] as const;
+const TABS = ["keys", "guardrails", "providers", "team", "settings"] as const;
 type TabId = (typeof TABS)[number];
 
 export function Workspace() {
@@ -23,6 +24,7 @@ export function Workspace() {
   const [ws, setWs] = useState<WorkspaceDetail | null>(null);
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [defaultCap, setDefaultCap] = useState(5);
+  const [ruleSets, setRuleSets] = useState<GuardrailRuleSets | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // The tab is in the URL (?tab=), so a section can be linked to and survives a reload. Keys is the default.
@@ -35,6 +37,11 @@ export function Workspace() {
     api.getWorkspace().then(setWs).catch((e: Error) => setError(e.message));
     api.listKeys().then(setKeys).catch((e: Error) => setError(e.message));
     api.getAccount().then((a) => setDefaultCap(a.live_cap_default_usd)).catch(() => {});
+    // content rules are secondary here: if they cannot be loaded the keys page still works without them
+    Promise.resolve()
+      .then(() => api.guardrails.ruleSets())
+      .then(setRuleSets)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -82,6 +89,9 @@ export function Workspace() {
           <Tab value="keys" count={keys.length ? activeCount : undefined}>
             Keys
           </Tab>
+          <Tab value="guardrails" count={ruleSets?.items.length || undefined}>
+            Guardrails
+          </Tab>
           <Tab value="providers">Providers</Tab>
           <Tab value="team" count={(ws?.members ?? []).length || undefined}>
             Team
@@ -98,7 +108,11 @@ export function Workspace() {
             refresh={refresh}
             onError={setError}
             onTab={setTab}
+            ruleSets={ruleSets}
           />
+        </TabPanel>
+        <TabPanel value="guardrails" className="max-w-4xl">
+          <GuardrailsTab keys={keys} onChange={refresh} />
         </TabPanel>
         <TabPanel value="providers" className="max-w-3xl">
           <ProvidersCard providers={providers} defaultCap={defaultCap} onChange={refresh} />
