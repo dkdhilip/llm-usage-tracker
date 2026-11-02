@@ -285,7 +285,8 @@ def _clean(s: str) -> str:
     s = redact(s)
     s = rx.sub(r"\d{8,}", "[digits]", s)
     s = rx.sub(r"[A-Za-z0-9_\-]{20,}", "[token]", s)
-    return " ".join(s.split())
+    # collapse whitespace but keep one space at each end, so the context reads "the [matched] plan", not "the[matched]plan"
+    return (" " if s[:1].isspace() else "") + " ".join(s.split()) + (" " if len(s) > 1 and s[-1:].isspace() else "")
 
 
 def build_snippet(text: str, os_: int, oe: int, matched_norm: str) -> str | None:
