@@ -11,7 +11,7 @@ import { RequestFilters } from "./requests/RequestFilters";
 import { RequestInspector } from "./requests/RequestInspector";
 import { RequestList } from "./requests/RequestList";
 
-const FILTER_KEYS = ["key_id", "provider", "model", "status", "start", "end"] as const;
+const FILTER_KEYS = ["key_id", "provider", "model", "status", "guardrail", "start", "end"] as const;
 /** The open request is in the URL as ?r=<id>, so it can be reloaded and the browser's Back button closes it. */
 const OPEN_PARAM = "r";
 

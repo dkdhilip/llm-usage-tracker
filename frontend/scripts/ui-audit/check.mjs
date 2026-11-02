@@ -287,6 +287,44 @@ await check("guardrailsFlow", async () => {
   return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: Try it matches, slow pattern refused, key panel opens, 0 violations` };
 });
 
+await check("guardrailBellAndRequests", async () => {
+  // the bell (count, open list, mark reviewed) and the red rows + inspector section on Requests, light/dark/phone
+  const out = {};
+  for (const [w, theme] of [[1440, "light"], [1440, "dark"], [390, "light"]]) {
+    const ctx = await context("auditadmin", w, theme); const page = await ctx.newPage();
+    await load(page, "/dashboard");
+    const bell = page.getByRole("button", { name: /^Notifications, \d+ unread/ });
+    await bell.waitFor({ timeout: 8000 });
+    const name = await bell.getAttribute("aria-label");
+    await bell.click(); await page.waitForTimeout(500);
+    const listed = await page.getByRole("list", { name: "Matches by key and rule" }).getByRole("listitem").count();
+    let v = await axeRun(page); let m = await page.evaluate(MEASURE);
+    out[`bell-${w}-${theme}`] = { name, listed, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), small: m.small, overflow: m.overflow };
+    await page.keyboard.press("Escape"); await page.waitForTimeout(250);
+    const back = await page.evaluate(() => /^Notifications/.test(document.activeElement?.getAttribute("aria-label") ?? ""));
+    out[`bell-${w}-${theme}`].escapeReturnsFocus = back;
+    await load(page, "/requests?guardrail=any", "[data-request-row]");
+    const tinted = await page.locator("[data-rule-row]").count();
+    const blockedText = await page.getByText(/^Rule: /).count() + await page.getByText(/^Flagged/).count();
+    v = await axeRun(page); m = await page.evaluate(MEASURE);
+    out[`requests-${w}-${theme}`] = { tinted, blockedText, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), small: m.small, overflow: m.overflow };
+    await page.locator("[data-rule-row=blocked]").first().click(); await page.waitForTimeout(700);
+    const section = await page.getByText(/stopped this request before it reached the provider/).count();
+    v = await axeRun(page);
+    out[`inspector-${w}-${theme}`] = { section, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
+    await ctx.close();
+  }
+  const ctx = await context("auditadmin", 1440, "light"); const page = await ctx.newPage();
+  await load(page, "/dashboard");
+  await page.getByRole("button", { name: /^Notifications, \d+ unread/ }).click();
+  await page.getByRole("button", { name: "Mark all reviewed" }).click(); await page.waitForTimeout(800);
+  const cleared = await page.getByRole("button", { name: "Notifications, none unread" }).count();
+  out.reviewClearsBell = { cleared };
+  await ctx.close();
+  const bad = Object.entries(out).filter(([, v]) => v.axe || v.small || v.overflow > 0 || v.listed === 0 || v.tinted === 0 || v.blockedText === 0 || v.section === 0 || v.escapeReturnsFocus === false || v.cleared === 0);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: bell count + list, red rows with text, inspector section, review clears, 0 violations` };
+});
+
 await check("workspaceAccessible", async () => {
   // every tab, the open key menu and the open drawer, light and dark, desktop and phone
   const out = {};
