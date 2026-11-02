@@ -5,10 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from app import guardrails
 from app.config import settings
 from app.db import get_db
 from app.gateway import period_spend, workspace_has_live_provider
-from app.models import AllowedModel, AllowedProvider, UsageLog, User, VirtualKey
+from app.models import AllowedModel, AllowedProvider, KeyGuardrailSet, UsageLog, User, VirtualKey
 from app.providers import SUPPORTED
 from app.schemas import AllowedModelsIn, KeyCreate, KeyCreated, KeyOut, KeyUpdate
 from app.scoping import counted_usage
@@ -61,6 +62,14 @@ def _build_allowed_models(
             if model:
                 rows.append(AllowedModel(provider=provider, model=model))
     return rows
+
+
+def _attached_sets(db: Session, key_ids: list[int]) -> dict[int, list[int]]:
+    out: dict[int, list[int]] = {}
+    if key_ids:
+        for kid, sid in db.execute(select(KeyGuardrailSet.key_id, KeyGuardrailSet.rule_set_id).where(KeyGuardrailSet.key_id.in_(key_ids)).order_by(KeyGuardrailSet.rule_set_id)):
+            out.setdefault(kid, []).append(sid)
+    return out
 
 
 def _in_workspace(db: Session, key_id: int, m: Membership, *, allow_deleted: bool = False) -> VirtualKey:
@@ -146,6 +155,13 @@ def create_key(
         image_logging_enabled=bool(body.image_logging_enabled),
     )
     db.add(vk)
+    if body.guardrail_rule_set_ids:
+        db.flush()
+        try:
+            guardrails.set_key_rule_sets(db, vk, body.guardrail_rule_set_ids, m.user_id)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(422, str(exc)) from None
     db.commit()
     db.refresh(vk)
     if vk.content_logging_enabled or vk.image_logging_enabled:
@@ -181,6 +197,7 @@ def list_keys(
         if m.is_admin
         else {}
     )
+    attached = _attached_sets(db, [k.id for k in keys]) if m.is_admin else {}
     out: list[KeyOut] = []
     for k in keys:
         requests, total_tokens, cost, unpriced = rollup.get(k.id, (0, 0, 0.0, 0))
@@ -209,6 +226,7 @@ def list_keys(
                 unpriced_requests=unpriced,
                 content_logging_enabled=k.content_logging_enabled,
                 image_logging_enabled=k.image_logging_enabled,
+                guardrail_rule_set_ids=attached.get(k.id, []),
             )
         )
     return out
@@ -259,6 +277,12 @@ def update_key(
     if body.image_logging_enabled is not None and body.image_logging_enabled != vk.image_logging_enabled:
         vk.image_logging_enabled = body.image_logging_enabled
         logging_changed = True
+    if body.guardrail_rule_set_ids is not None:
+        try:
+            guardrails.set_key_rule_sets(db, vk, body.guardrail_rule_set_ids, m.user_id)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(422, str(exc)) from None
     db.commit()
     if logging_changed:  # who changed what, never any content (the project has no general audit log)
         logger.info(
@@ -277,6 +301,7 @@ def update_key(
         "expires_at": vk.expires_at.isoformat() if vk.expires_at else None,
         "content_logging_enabled": vk.content_logging_enabled,
         "image_logging_enabled": vk.image_logging_enabled,
+        "guardrail_rule_set_ids": _attached_sets(db, [vk.id]).get(vk.id, []),
     }
 
 

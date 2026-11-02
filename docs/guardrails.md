@@ -1,7 +1,7 @@
 # Guardrails (content rules on virtual keys)
 
-> Status: the engine and gateway wiring are in place but **off** (`GUARDRAILS_ENABLED=false`). There is no admin API
-> or UI yet (later PRs). Rule sets are created through the ORM helpers in `app/guardrails.py` (used by the tests).
+> Status: the engine, gateway wiring and admin API are in place but **off** (`GUARDRAILS_ENABLED=false`). The admin API
+> (`/api/guardrails/*`, see [api.md](api.md)) works while the flag is off so rules can be prepared; there is no UI yet.
 
 An admin attaches rule sets (words, patterns, built-in detectors) to a virtual key. For every gateway request on that
 key the request text is checked. A matching **block** rule stops the request with `403` before any provider call; a
@@ -81,3 +81,16 @@ the request is not slowed past about 110 ms. Enabling in production is gated on 
 
 All schema changes are additive. With the flag off nothing is read or written. If code is rolled back past PR1 while
 blocked rows exist, old analytics would count them: delete them first (`DELETE FROM usage_logs WHERE status = 'blocked'`).
+
+## Admin API semantics
+
+- Every write (rule, rule set, attachment) bumps `workspaces.guardrail_version` **in the same transaction**, so the gateway
+  applies it to the very next request in any worker. `virtual_keys.has_guardrails` is kept in step (also when a set is
+  deleted).
+- Every write also adds an `audit_events` row (actor, action, target, ids/names/counts; rule patterns are admin
+  configuration and are included, request text never is): `ruleset.create|update|enable|disable|delete`,
+  `rule.create|update|delete`, `key.guardrails.attach|detach`, `hits.review`.
+- A hit is the notification. Read state is workspace-wide. `POST /hits/review` takes `up_to_id`, so hits that arrived after
+  a list was loaded stay unread. Reading snippets is logged as user + count, never content.
+- Limits are enforced when saving (pattern length, rules per set, sets per workspace and key, active rules per key) as well
+  as when evaluating.
