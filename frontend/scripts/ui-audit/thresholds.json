@@ -27,6 +27,7 @@
     "keyMenuKeyboard",
     "createKeyDrawer",
     "keysTableFitsDesktop",
+    "guardrailsFlow",
     "workspaceAccessible",
     "playgroundFlow",
     "playgroundAccessible",

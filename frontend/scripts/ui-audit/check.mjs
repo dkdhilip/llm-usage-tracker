@@ -214,13 +214,13 @@ await check("workspaceTabs", async () => {
   const names = await page.getByRole("tab").allTextContents();
   const first = await page.getByRole("tab", { name: /^Keys/ }).getAttribute("aria-selected");
   await page.getByRole("tab", { name: /^Keys/ }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(150);
-  const moved = await page.evaluate(() => document.activeElement?.getAttribute("role") === "tab" && /Providers/.test(document.activeElement.textContent));
+  const moved = await page.evaluate(() => document.activeElement?.getAttribute("role") === "tab" && /Guardrails/.test(document.activeElement.textContent));
   await page.keyboard.press("Enter"); await page.waitForTimeout(400);
-  const providers = await page.evaluate(() => ({ url: location.search, shown: /Provider keys/.test(document.body.innerText), keysGone: !document.getElementById("keys-title") }));
+  const providers = await page.evaluate(() => ({ url: location.search, shown: /Content rules/.test(document.body.innerText), keysGone: !document.getElementById("keys-title") }));
   const p2 = await ctx.newPage(); await load(p2, "/workspace?tab=settings");
   const deep = await p2.evaluate(() => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent);
   await ctx.close();
-  const pass = names.length === 4 && first === "true" && moved && providers.url === "?tab=providers" && providers.shown && providers.keysGone && deep === "Settings";
+  const pass = names.length === 5 && first === "true" && moved && providers.url === "?tab=guardrails" && providers.shown && providers.keysGone && deep === "Settings";
   return { pass, detail: JSON.stringify({ tabs: names, defaultKeys: first === "true", arrowMoves: moved, ...providers, deepLinkSettings: deep }) };
 });
 
@@ -255,12 +255,44 @@ await check("keysTableFitsDesktop", async () => {
   await ctx.close(); return { pass: r.scrolls === 0 && r.kebabInside, detail: JSON.stringify(r) };
 });
 
+await check("guardrailsFlow", async () => {
+  // the Guardrails tab end to end: add-rule drawer with "Try it", a rule refused with its reason, the key's rules panel
+  const out = {};
+  for (const [w, theme] of [[1440, "light"], [1440, "dark"], [390, "light"]]) {
+    const ctx = await context("auditadmin", w, theme); const page = await ctx.newPage();
+    await load(page, "/workspace?tab=guardrails", "text=Content rules");
+    await page.getByRole("button", { name: /Add rule to No secrets/ }).click(); await page.waitForTimeout(400);
+    const dlg = page.getByRole("dialog", { name: "Add a rule" });
+    await dlg.getByLabel("Rule name").fill("Internal code");
+    await dlg.getByLabel("Word or phrase").fill("bluefalcon");
+    await dlg.getByLabel("Try it").fill("the bluefalcon plan");
+    await dlg.getByRole("button", { name: "Try it" }).click(); await page.waitForTimeout(500);
+    const matched = await dlg.getByText(/Matches/).count();
+    let v = await axeRun(page); out[`dialog-${w}-${theme}`] = { matched, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
+    await dlg.getByRole("combobox", { name: "What to look for" }).selectOption("regex");
+    await dlg.getByLabel("Regular expression").fill("(a|aa)+$");
+    await dlg.getByRole("button", { name: "Add rule" }).click(); await page.waitForTimeout(900);
+    const refused = await dlg.getByText(/too slow/).count() + await page.getByText(/first rule/).count();
+    out[`refused-${w}-${theme}`] = { refused: refused > 0 };
+    await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    await load(page, "/workspace", "text=Virtual keys");
+    await page.getByRole("button", { name: "More actions for support-bot" }).click();
+    await page.getByRole("menuitem", { name: "Content rules" }).click(); await page.waitForTimeout(400);
+    const panel = await page.getByTestId(/key-rules-editor-/).count();
+    v = await axeRun(page); const m = await page.evaluate(MEASURE);
+    out[`keyPanel-${w}-${theme}`] = { panel, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), small: m.small, overflow: m.overflow };
+    await ctx.close();
+  }
+  const bad = Object.entries(out).filter(([k, v]) => v.axe || v.small || v.overflow > 0 || v.matched === 0 || v.panel === 0 || v.refused === false);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: Try it matches, slow pattern refused, key panel opens, 0 violations` };
+});
+
 await check("workspaceAccessible", async () => {
   // every tab, the open key menu and the open drawer, light and dark, desktop and phone
   const out = {};
   for (const [w, theme] of [[1440, "light"], [1440, "dark"], [390, "light"], [390, "dark"]]) {
     const ctx = await context("auditadmin", w, theme); const page = await ctx.newPage();
-    for (const tab of ["keys", "providers", "team", "settings"]) {
+    for (const tab of ["keys", "guardrails", "providers", "team", "settings"]) {
       await load(page, tab === "keys" ? "/workspace" : `/workspace?tab=${tab}`, "[role=tabpanel]");
       if (SHOTS) await page.screenshot({ path: join(OUT, "shots", `workspace-${tab}-${w}-${theme}.png`), fullPage: true });
       const v = await axeRun(page); const m = await page.evaluate(MEASURE);

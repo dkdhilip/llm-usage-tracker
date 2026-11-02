@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type KeyRow, type WorkspaceDetail } from "../../lib/api";
+import { api, type GuardrailRuleSets, type KeyRow, type WorkspaceDetail } from "../../lib/api";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -57,18 +57,21 @@ export function KeysTab({
   refresh,
   onError,
   onTab,
+  ruleSets,
 }: {
+  ruleSets?: GuardrailRuleSets | null;
   ws: WorkspaceDetail | null;
   keys: KeyRow[];
   configured: string[];
   members: { user_id: number; username: string }[];
   refresh: () => void;
   onError: (message: string) => void;
-  onTab: (tab: "providers" | "settings") => void;
+  onTab: (tab: "providers" | "settings" | "guardrails") => void;
 }) {
   const [statuses, setStatuses] = useState<KeyStatus[]>(initialStatuses);
   const [connectId, setConnectId] = useState<number | null>(null);
   const [loggingId, setLoggingId] = useState<number | null>(null);
+  const [rulesId, setRulesId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [pending, setPending] = useState<{ kind: "revoke" | "delete"; key: KeyRow } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,6 +127,11 @@ export function KeysTab({
     retentionDays: ws?.content_logging?.retention_days ?? 30,
     configured,
     onChange: refresh,
+    ruleSets: ruleSets?.items,
+    rulesEnforced: ruleSets?.enabled,
+    maxSetsPerKey: ruleSets?.limits.sets_per_key,
+    rulesId,
+    onRules: (id) => setRulesId(rulesId === id ? null : id),
   };
 
   const hasRequests = keys.some((k) => k.requests > 0);
@@ -174,6 +182,8 @@ export function KeysTab({
                   members={members}
                   masterText={ws?.content_logging?.enabled}
                   masterImages={ws?.image_logging?.enabled}
+                  ruleSets={ruleSets?.items}
+                  rulesEnforced={ruleSets?.enabled}
                 />
               </DialogContent>
             </Dialog>

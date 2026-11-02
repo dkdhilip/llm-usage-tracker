@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, PROVIDERS, type BudgetPeriod, type KeyCreated } from "../../lib/api";
+import { api, PROVIDERS, type BudgetPeriod, type GuardrailRuleSet, type KeyCreated } from "../../lib/api";
 import { Card } from "../../components/Card";
 import { ConnectPanel } from "../../components/ConnectPanel";
 import { Button } from "../../components/ui/Button";
@@ -15,8 +15,13 @@ export function CreateKeyForm({
   members,
   masterText,
   masterImages,
+  ruleSets,
+  rulesEnforced,
   framed = true,
 }: {
+  /** the workspace's content rule sets; the section is hidden until there is at least one */
+  ruleSets?: GuardrailRuleSet[];
+  rulesEnforced?: boolean;
   /** false when the form sits in a drawer that already has its own title and frame */
   framed?: boolean;
   onCreated: () => void;
@@ -27,6 +32,7 @@ export function CreateKeyForm({
 }) {
   const [logText, setLogText] = useState(false);
   const [logImages, setLogImages] = useState(false);
+  const [ruleIds, setRuleIds] = useState<number[]>([]);
   const [label, setLabel] = useState("");
   const [allowed, setAllowed] = useState<string[]>([]);
   const [assignee, setAssignee] = useState("");
@@ -74,10 +80,12 @@ export function CreateKeyForm({
         budget_end: budgetPeriod === "custom" ? budgetEnd || null : null,
         content_logging_enabled: logText,
         image_logging_enabled: logText && logImages,
+        ...(ruleIds.length ? { guardrail_rule_set_ids: ruleIds } : {}),
       });
       setCreated(res);
       setLogText(false);
       setLogImages(false);
+      setRuleIds([]);
       setLabel("");
       setBudget("");
       setBudgetStart("");
@@ -193,6 +201,28 @@ export function CreateKeyForm({
           </p>
         ) : null}
       </fieldset>
+
+      {ruleSets && ruleSets.length > 0 && (
+        <fieldset className="rounded-md border border-line p-3" data-testid="create-key-rules">
+          <legend className="px-1 text-ui font-medium text-fg">Content rules for this key (optional)</legend>
+          {ruleSets.map((s) => (
+            <label key={s.id} className="flex min-h-7 items-start gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={ruleIds.includes(s.id)}
+                onChange={(e) => setRuleIds((ids) => (e.target.checked ? [...ids, s.id] : ids.filter((x) => x !== s.id)))}
+              />
+              <span>
+                {s.name} <span className="text-xs text-fg-muted">· {s.rules.length} rule{s.rules.length === 1 ? "" : "s"}</span>
+              </span>
+            </label>
+          ))}
+          {rulesEnforced === false && ruleIds.length > 0 && (
+            <p className="mt-2 text-xs text-warning-fg">Content rules are not being enforced yet, so these will do nothing for now.</p>
+          )}
+        </fieldset>
+      )}
 
       <p className={hint}>
         {willBeLive

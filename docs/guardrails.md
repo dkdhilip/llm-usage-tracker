@@ -1,7 +1,17 @@
 # Guardrails (content rules on virtual keys)
 
-> Status: the engine, gateway wiring and admin API are in place but **off** (`GUARDRAILS_ENABLED=false`). The admin API
-> (`/api/guardrails/*`, see [api.md](api.md)) works while the flag is off so rules can be prepared; there is no UI yet.
+> Status: the engine, gateway wiring, admin API and the Guardrails tab are in place but **off**
+> (`GUARDRAILS_ENABLED=false`). Rules can be created and attached while the flag is off (the UI says plainly that
+> nothing is enforced yet). The notification bell and the red Requests rows come in a later PR.
+
+## Where it is in the UI
+
+Workspace > **Guardrails** (`?tab=guardrails`): rule sets with their rules (Flag/Block shown as text), add/edit rule
+drawer with a **Try it** box (runs the real engine on typed text, stores nothing; a rule that is invalid or could stall
+requests is refused with the reason), enable/disable, delete with confirmation, and an Activity list. The first rule in a
+workspace asks for a one-time acknowledgement that admins will be able to read short redacted fragments of matching
+requests. Keys: the create-key drawer has an optional "Content rules" section, a key's "⋯" menu has **Content rules**
+(tick the sets; saved immediately), and a key with sets shows "Rules: <set>" under its name.
 
 An admin attaches rule sets (words, patterns, built-in detectors) to a virtual key. For every gateway request on that
 key the request text is checked. A matching **block** rule stops the request with `403` before any provider call; a
