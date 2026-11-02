@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.pricing import PROVIDERS
 from app.schemas import ModelPricingIn, ModelPricingOut
+from app.scoping import counted_usage
 from app.security import require_user
 from app.workspace import (
     ROLE_ADMIN,
@@ -131,6 +132,7 @@ def _members_view(db: Session, workspace_id: int) -> list[dict]:
             .where(
                 VirtualKey.workspace_id == workspace_id,
                 VirtualKey.assigned_user_id.isnot(None),
+                counted_usage(),  # blocked requests never reached a provider
             )
             .group_by(VirtualKey.assigned_user_id)
         )

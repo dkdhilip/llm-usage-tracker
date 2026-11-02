@@ -32,6 +32,7 @@ from app.pricing import (
     estimate_duration_cost,
     price_for,
 )
+from app.scoping import counted_usage
 
 
 class UpstreamHTTPError(Exception):
@@ -74,9 +75,10 @@ def enforce_workspace_quota(db: Session, vk: VirtualKey) -> None:
         select(func.count())
         .select_from(UsageLog)
         .where(
+            counted_usage(),  # a flood of blocked requests must never fill the cap and 429 legitimate traffic
             UsageLog.key_id.in_(
                 select(VirtualKey.id).where(VirtualKey.workspace_id == ws_id)
-            )
+            ),
         )
     )
     if (rows or 0) >= settings.MAX_USAGE_ROWS_PER_WORKSPACE:

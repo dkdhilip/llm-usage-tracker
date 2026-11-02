@@ -29,7 +29,7 @@
   `gateway.authorize_model` (`403 model_not_allowed` on a miss).
 - **usage_logs** — `id, key_id, request_id, provider, model, prompt_tokens, completion_tokens,
   total_tokens, duration_seconds (nullable), characters (nullable), cost (nullable), cost_source,
-  latency_ms, status, prompt_preview, response_preview, usage_raw (jsonb, nullable), ts` (`mode` /
+  latency_ms, status, guardrail (nullable), prompt_preview, response_preview, usage_raw (jsonb, nullable), ts` (`mode` /
   `simulated` are legacy columns from the retired simulator — always `live` / `false`).
   `duration_seconds`/`characters` (migration v9) are the non-token billing dimensions — audio
   transcription's real unit for duration-billed models, TTS's input character count; see [Billing
@@ -43,7 +43,15 @@
   detail a provider's own response exposed (cached/reasoning tokens, prompt-cache reads/writes,
   per-modality token counts, ...) verbatim, provider-shaped — see
   `app/adapters/base.py::UsageInfo`. `status` = `success` or `error` (a failed upstream call
-  still records a row). Previews are null unless `LOG_BODIES=true`.
+  still records a row), plus the reserved value `blocked` (see `app/usage_status.py`): a request
+  stopped before any provider call, with no tokens, `cost` 0 and a near-zero latency. Nothing writes
+  `blocked` yet, but every query that counts requests (the usage endpoints, the key and member
+  rollups, and the per-workspace stored-row cap) already excludes it through
+  `scoping.counted_usage()`, so it can never change a request count, the error rate, latency
+  percentiles, `last_used_at`, budgets or the cap; the Requests list is the one place that shows it
+  (`?status=blocked`), and `GET /api/usage/summary` reports it separately as `blocked_requests`.
+  `guardrail` (migration v15, nullable `VARCHAR(12)`) is `NULL` for every ordinary row and is
+  reserved for `flagged` / `blocked` / `unchecked`. Previews are null unless `LOG_BODIES=true`.
 - **provider_credentials** — `(id, workspace_id → workspaces (`ON DELETE CASCADE`), provider,
   ciphertext, last4, monthly_cap_usd, updated_at)`, unique on `(workspace_id, provider)`. The
   workspace's own provider key; its `allow_live` virtual keys call real providers on it, and
@@ -98,5 +106,7 @@ There is no Alembic. `app/bootstrap.py::_migrate` runs guarded `information_sche
 account into a personal workspace as its admin (keys carried over), drops the old global-admin
 account and `virtual_keys.user_id`. v7 adds `virtual_keys.expires_at`, the `allowed_models`
 table, and `usage_logs.usage_raw`/nullable `cost`. v8 adds the `model_pricing` table. v9 adds
-`usage_logs.duration_seconds`/`.characters`. All additive and backward compatible with every
-key/row created before them.
+`usage_logs.duration_seconds`/`.characters`. v15 adds the nullable `usage_logs.guardrail` column
+with `ADD COLUMN IF NOT EXISTS` (atomic, so safe to repeat and to race), a short `lock_timeout`
+(a stuck lock fails the boot instead of being skipped), and no backfill. All additive and backward
+compatible with every key/row created before them.

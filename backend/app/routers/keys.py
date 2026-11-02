@@ -11,6 +11,7 @@ from app.gateway import period_spend, workspace_has_live_provider
 from app.models import AllowedModel, AllowedProvider, UsageLog, User, VirtualKey
 from app.providers import SUPPORTED
 from app.schemas import AllowedModelsIn, KeyCreate, KeyCreated, KeyOut, KeyUpdate
+from app.scoping import counted_usage
 from app.security import new_key
 from app.workspace import Membership, require_membership, require_workspace_admin
 
@@ -168,7 +169,7 @@ def list_keys(
                 func.coalesce(func.sum(UsageLog.total_tokens), 0),
                 func.coalesce(func.sum(UsageLog.cost), 0),
                 func.coalesce(func.sum(case((UsageLog.cost.is_(None), 1), else_=0)), 0),
-            ).group_by(UsageLog.key_id)
+            ).where(counted_usage()).group_by(UsageLog.key_id)
         ).all()
     }
     stmt = select(VirtualKey).where(VirtualKey.workspace_id == m.workspace_id)

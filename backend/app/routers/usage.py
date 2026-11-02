@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import UsageLog, VirtualKey
 from app.pricing import models_catalog
-from app.scoping import Viewer, scope_usage, viewer
+from app.scoping import Viewer, counted_usage, scope_usage, viewer
+from app.usage_status import BLOCKED
 
 router = APIRouter(prefix="/api", tags=["usage"])
 
@@ -29,7 +30,13 @@ def _apply_filters(
     provider: str | None,
     model: str | None,
     key_id: int | None,
+    *,
+    include_blocked: bool = False,
 ) -> Select:
+    # Every analytics query counts requests that reached a provider. A blocked request (stopped before any provider
+    # call, no tokens/cost/real latency) is not one of them: see scoping.counted_usage.
+    if not include_blocked:
+        stmt = stmt.where(counted_usage())
     if start is not None:
         stmt = stmt.where(UsageLog.ts >= start)
     if end is not None:
@@ -96,6 +103,17 @@ def usage_summary(
     if not v.is_admin:
         ak_stmt = ak_stmt.where(VirtualKey.assigned_user_id == v.user_id)
     active_keys = db.scalar(ak_stmt)
+    # Blocked requests are reported on their own, never inside the counts above.
+    blocked_requests = db.scalar(
+        scope_usage(
+            _apply_filters(
+                select(func.count()).select_from(UsageLog).where(UsageLog.status == BLOCKED),
+                start, end, provider, model, key_id,
+                include_blocked=True,
+            ),
+            v,
+        )
+    )
     total_requests = row[0]
     errors = int(row[9])
     latency_sum_s = float(row[10]) / 1000.0
@@ -114,6 +132,7 @@ def usage_summary(
         "tokens_per_sec": round(int(row[1]) / latency_sum_s, 1) if latency_sum_s else 0.0,
         "active_keys": active_keys or 0,
         "unpriced_requests": int(row[11]),
+        "blocked_requests": int(blocked_requests or 0),
     }
 
 

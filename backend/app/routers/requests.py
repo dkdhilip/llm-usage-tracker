@@ -103,6 +103,8 @@ def list_requests(
             "cost_source": u.cost_source,
             "latency_ms": u.latency_ms,
             "status": u.status,
+            # null for every ordinary request; "flagged" | "blocked" | "unchecked" once a content rule applies
+            "guardrail": u.guardrail,
             "prompt_preview": u.prompt_preview,
             "response_preview": u.response_preview,
             "has_content": u.id in with_content,

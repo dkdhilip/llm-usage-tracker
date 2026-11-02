@@ -4,6 +4,8 @@
 these guarded ALTERs bring pre-existing tables up to the current column set.
 """
 
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -195,6 +197,28 @@ def _migrate(db: Session) -> None:
     if not _has_col(db, "virtual_keys", "deleted_at"):
         db.execute(text("ALTER TABLE virtual_keys ADD COLUMN deleted_at TIMESTAMPTZ"))
         db.commit()
+
+    _migrate_v15_usage_guardrail(db)
+
+
+_V15_LOCK_TIMEOUT = "5s"  # how long the v15 ALTER may wait for its lock (a test shortens it)
+
+
+def _migrate_v15_usage_guardrail(db: Session) -> None:
+    """v15: `usage_logs.guardrail` (VARCHAR(12), NULL). One nullable column, no default, no index, no backfill, no
+    change to any existing row: nothing writes it yet.
+
+    `ADD COLUMN IF NOT EXISTS` is atomic in Postgres, so running this twice, or from two processes booting at the
+    same time, is safe (the check-then-act `_has_col` guards above are not). A nullable column without a default
+    needs no table rewrite; it takes an ACCESS EXCLUSIVE lock only for an instant, so a short lock_timeout makes a
+    stuck lock fail loudly. It must fail the boot rather than be skipped: every ORM query on UsageLog selects this
+    column, so running without it would break the app at request time (the previous deploy keeps serving)."""
+    db.execute(text(f"SET LOCAL lock_timeout = '{_V15_LOCK_TIMEOUT}'"))
+    db.execute(text("ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS guardrail VARCHAR(12)"))
+    db.commit()  # also ends the transaction, which ends the SET LOCAL
+    # uvicorn's own logger, not "app.bootstrap": app loggers have no handler/level configured and would hide this at
+    # INFO, but a deploy needs to see in its logs that the migration ran.
+    logging.getLogger("uvicorn.error").info("bootstrap v15: usage_logs.guardrail ensured")
 
 
 def _migrate_v6_workspaces(db: Session) -> None:

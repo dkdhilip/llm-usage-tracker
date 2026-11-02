@@ -17,6 +17,13 @@ export function StatusBadge({ status }: { status: string }) {
         Error
       </Badge>
     );
+  // Stopped before the provider was called. The word carries the meaning; the colour only reinforces it.
+  if (status === "blocked")
+    return (
+      <Badge variant="danger" dot title="Stopped before the provider was called">
+        Blocked
+      </Badge>
+    );
   return (
     <Badge dot className="capitalize">
       {status}
@@ -26,6 +33,14 @@ export function StatusBadge({ status }: { status: string }) {
 
 /** One request's cost. No price is "No price yet", never $0; a real $0 is "Free". */
 export function RowCost({ row, long }: { row: RequestRow; long?: boolean }) {
+  // A blocked request never reached a provider, so nothing was charged: not "Free" (which means priced at $0).
+  if (row.status === "blocked")
+    return (
+      <span className="text-fg-muted" title="Stopped before the provider was called, so nothing was charged">
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">Not charged</span>
+      </span>
+    );
   if (row.cost == null) return <span className="text-fg-muted">No price yet</span>;
   if (row.cost === 0) return <span title="Priced at $0">Free</span>;
   return (
