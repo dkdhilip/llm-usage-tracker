@@ -268,6 +268,7 @@ export interface KeyRow {
   // Per-key content logging (default off). A key is only captured when the workspace master switch is on too.
   content_logging_enabled?: boolean;
   image_logging_enabled?: boolean;
+  guardrail_rule_set_ids?: number[]; // content rule sets attached to this key (admin view)
   id: number;
   label: string;
   key_prefix: string;
@@ -433,6 +434,86 @@ export interface ChatResult {
   latency_ms: number;
 }
 
+// ---- guardrails (content rules) ----
+export type GuardrailKind = "phrase" | "regex" | "preset";
+export type GuardrailAction = "flag" | "block";
+
+export interface GuardrailRule {
+  id: number;
+  name: string;
+  kind: GuardrailKind;
+  pattern: string | null;
+  preset_id: string | null;
+  action: GuardrailAction;
+  whole_word: boolean;
+  enabled: boolean;
+  position: number;
+}
+
+export interface GuardrailRuleSet {
+  id: number;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  rules: GuardrailRule[];
+  key_ids: number[];
+}
+
+export interface GuardrailLimits {
+  pattern_chars: number;
+  rules_per_set: number;
+  sets_per_key: number;
+  rules_per_key: number;
+  sets_per_workspace: number;
+}
+
+export interface GuardrailRuleSets {
+  enabled: boolean; // GUARDRAILS_ENABLED: while false, rules are saved but nothing is enforced
+  limits: GuardrailLimits;
+  items: GuardrailRuleSet[];
+}
+
+export interface GuardrailPreset {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface GuardrailRuleInput {
+  name: string;
+  kind: GuardrailKind;
+  pattern?: string | null;
+  preset_id?: string | null;
+  action: GuardrailAction;
+  whole_word?: boolean;
+  enabled?: boolean;
+}
+
+export interface GuardrailStatus {
+  enabled: boolean;
+  last_24h: { blocked: number; flagged: number; unchecked: number };
+  recording: { ceiling_per_hour: number; throttled_at: string | null };
+  evidence_gaps: { ts: string; count?: number; reasons?: string[] }[];
+  retention_days: number;
+}
+
+export interface GuardrailActivity {
+  id: number;
+  ts: string;
+  actor_user_id: number | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface GuardrailTestResult {
+  matched: boolean;
+  occurrences: number;
+  snippet: string | null;
+  unchecked: boolean;
+}
+
 export const api = {
   health: () => req<{ status: string; version: string }>("/healthz"),
   models: () => req<ModelInfo[]>("/api/models"),
@@ -561,6 +642,7 @@ export const api = {
     budget_end?: string | null;
     content_logging_enabled?: boolean;
     image_logging_enabled?: boolean;
+    guardrail_rule_set_ids?: number[];
   }) =>
     req<KeyCreated>("/api/keys", {
       method: "POST",
@@ -580,6 +662,7 @@ export const api = {
       clear_budget?: boolean;
       content_logging_enabled?: boolean;
       image_logging_enabled?: boolean;
+      guardrail_rule_set_ids?: number[];
     },
   ) =>
     req<Record<string, unknown>>(`/api/keys/${id}`, {
@@ -595,6 +678,30 @@ export const api = {
     req<{ id: number; revoked_at: string; deleted_at: string }>(`/api/keys/${id}/delete`, {
       method: "POST",
     }),
+
+  guardrails: {
+    ruleSets: () => req<GuardrailRuleSets>("/api/guardrails/rule-sets"),
+    presets: () => req<GuardrailPreset[]>("/api/guardrails/presets"),
+    status: () => req<GuardrailStatus>("/api/guardrails/status"),
+    activity: () => req<{ items: GuardrailActivity[]; next_cursor: number | null }>("/api/guardrails/activity?limit=20"),
+    createSet: (body: { name: string; description?: string | null }) =>
+      req<GuardrailRuleSet>("/api/guardrails/rule-sets", { method: "POST", body: JSON.stringify(body) }),
+    updateSet: (id: number, body: { name?: string; description?: string | null; enabled?: boolean }) =>
+      req<GuardrailRuleSet>(`/api/guardrails/rule-sets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteSet: (id: number) => req<{ id: number }>(`/api/guardrails/rule-sets/${id}`, { method: "DELETE" }),
+    createRule: (setId: number, body: GuardrailRuleInput) =>
+      req<GuardrailRule>(`/api/guardrails/rule-sets/${setId}/rules`, { method: "POST", body: JSON.stringify(body) }),
+    updateRule: (id: number, body: Partial<GuardrailRuleInput>) =>
+      req<GuardrailRule>(`/api/guardrails/rules/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteRule: (id: number) => req<{ id: number }>(`/api/guardrails/rules/${id}`, { method: "DELETE" }),
+    setKeyRuleSets: (keyId: number, ruleSetIds: number[]) =>
+      req<{ key_id: number; rule_set_ids: number[] }>(`/api/guardrails/keys/${keyId}/rule-sets`, {
+        method: "PUT",
+        body: JSON.stringify({ rule_set_ids: ruleSetIds }),
+      }),
+    test: (body: { kind: GuardrailKind; pattern?: string | null; preset_id?: string | null; whole_word?: boolean; text: string }) =>
+      req<GuardrailTestResult>("/api/guardrails/test", { method: "POST", body: JSON.stringify(body) }),
+  },
 
   inspectKey: (key: string) =>
     req<KeyInspect>("/v1/proxy/inspect", {

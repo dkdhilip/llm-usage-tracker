@@ -59,6 +59,13 @@ await admin.call("DELETE", `/api/keys/${creds.keys["old-key"].id}`);
 await admin.call("DELETE", `/api/keys/${creds.keys["gone-key"].id}`);
 await admin.call("POST", `/api/keys/${creds.keys["gone-key"].id}/delete`);
 
+// content rules: two sets, one attached to a key (the Guardrails tab and the key's "Content rules" column need data)
+const rs = await admin.call("POST", "/api/guardrails/rule-sets", { name: "No secrets", description: "Keep credentials and card numbers out of prompts" });
+await admin.call("POST", `/api/guardrails/rule-sets/${rs.j.id}/rules`, { name: "Card numbers", kind: "preset", preset_id: "card", action: "block" });
+await admin.call("POST", `/api/guardrails/rule-sets/${rs.j.id}/rules`, { name: "Project codename", kind: "phrase", pattern: "bluefalcon", action: "flag", whole_word: true });
+await admin.call("POST", "/api/guardrails/rule-sets", { name: "Competitor mentions" });
+await admin.call("PUT", `/api/guardrails/keys/${creds.keys["support-bot"].id}/rule-sets`, { rule_set_ids: [rs.j.id] });
+
 // prompt/response (and image) logging on, for two keys, then a few real gateway calls (providers are mocked)
 await admin.call("PATCH", "/api/workspace/content-logging", { enabled: true });
 await admin.call("PATCH", "/api/workspace/image-logging", { enabled: true });
