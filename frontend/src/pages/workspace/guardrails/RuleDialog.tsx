@@ -3,6 +3,7 @@ import { api, type GuardrailAction, type GuardrailKind, type GuardrailRule, type
 import { Button } from "../../../components/ui/Button";
 import { Dialog, DialogContent } from "../../../components/ui/Dialog";
 import { Field, Input, Textarea } from "../../../components/ui/Field";
+import { InfoTip } from "../../../components/ui/InfoTip";
 import { InlineAlert } from "../../../components/ui/InlineAlert";
 import { ACTION_HELP, ACTION_LABEL } from "./labels";
 
@@ -68,16 +69,34 @@ export function RuleDialog({
 
           <Field
             label={kind === "phrase" ? "Word or phrase" : "Pattern"}
-            hint={
+            labelExtra={
               kind === "phrase" ? (
-                <span data-testid="phrase-example">
-                  For example: <em>project falcon</em>, <em>confidential</em> or <em>salary list</em>. Capital letters don't matter, and it matches anywhere in the
-                  request. One word or phrase per rule: add another rule for each one you want to catch.
-                </span>
-              ) : `Up to ${patternLimit} characters. This rule was saved as a pattern (regular expression); new rules use words or phrases.`
+                <InfoTip label="How this works">
+                  <strong className="block font-semibold">How this works</strong>
+                  <span className="mt-1 block">Type one word or one short phrase. If a request contains it, this rule will act on it.</span>
+                  <span className="mt-1 block">
+                    A word: <em>salary</em>
+                  </span>
+                  <span className="block">
+                    A phrase: <em>project falcon</em>
+                  </span>
+                  <span className="mt-1 block">Big or small letters do not matter.</span>
+                  <span className="mt-1 block">Want to catch more than one? Add one rule for each.</span>
+                </InfoTip>
+              ) : undefined
             }
+            hint={kind === "phrase" ? undefined : `Up to ${patternLimit} characters. This rule was saved as a pattern (regular expression); new rules use words or phrases.`}
           >
-            {(c) => <Input {...c} value={pattern} maxLength={patternLimit} onChange={(e) => setPattern(e.target.value)} className={kind === "regex" ? "font-mono" : undefined} />}
+            {(c) => (
+              <Input
+                {...c}
+                value={pattern}
+                maxLength={patternLimit}
+                placeholder={kind === "phrase" ? "A word like salary, or a phrase like project falcon" : undefined}
+                onChange={(e) => setPattern(e.target.value)}
+                className={kind === "regex" ? "font-mono" : undefined}
+              />
+            )}
           </Field>
 
           {kind === "phrase" && (
