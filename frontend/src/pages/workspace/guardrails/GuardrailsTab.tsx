@@ -16,7 +16,6 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { Field, Input } from "../../../components/ui/Field";
 import { InlineAlert } from "../../../components/ui/InlineAlert";
 import { useConfirmDialog } from "../../../components/ui/useConfirmDialog";
-import { Detectors } from "./Detectors";
 import { RuleDialog } from "./RuleDialog";
 import { ACTION_LABEL, KIND_LABEL, activityLabel, ruleSummary } from "./labels";
 
@@ -71,8 +70,7 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
         <>
           <p>
             Content rules read the text of requests sent with the keys they are attached to. When a rule matches, you can
-            see a short, redacted piece of the surrounding text (never the matched text itself, and none at all for card
-            numbers, keys or emails) for {status?.retention_days ?? 30} days.
+            see a short, redacted piece of the surrounding text (never the matched text itself) for {status?.retention_days ?? 30} days.
           </p>
           <p className="mt-2">Tell your team that requests may be checked. This is a policy aid, not a security boundary.</p>
         </>
@@ -90,11 +88,6 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
     else await api.guardrails.createRule(set.id, body);
     setEditing(null);
     changed();
-  }
-
-  async function addDetector(set: GuardrailRuleSet, preset: GuardrailPreset) {
-    if (!(await consentToFirstRule())) return;
-    await run(() => api.guardrails.createRule(set.id, { name: preset.label, kind: "preset", preset_id: preset.id, action: "flag" }));
   }
 
   async function removeSet(s: GuardrailRuleSet) {
@@ -220,11 +213,9 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
 
               {s.rules.length === 0 ? (
                 <p className="text-sm text-fg-muted">No rules in this set yet.</p>
-              ) : s.rules.some((r) => r.kind !== "preset") ? (
+              ) : (
                 <ul className="divide-y divide-line rounded-md border border-line" aria-label={`Rules in ${s.name}`}>
-                  {s.rules
-                    .filter((r) => r.kind !== "preset")
-                    .map((r) => (
+                  {s.rules.map((r) => (
                     <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -240,9 +231,11 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
                           {r.enabled ? "Disable" : "Enable"}
                           <span className="sr-only"> {r.name}</span>
                         </Button>
-                        <Button size="sm" onClick={() => setEditing({ set: s, rule: r })}>
-                          Edit<span className="sr-only"> {r.name}</span>
-                        </Button>
+                        {r.kind !== "preset" && (
+                          <Button size="sm" onClick={() => setEditing({ set: s, rule: r })}>
+                            Edit<span className="sr-only"> {r.name}</span>
+                          </Button>
+                        )}
                         <Button size="sm" variant="danger" onClick={() => removeRule(r)}>
                           Delete<span className="sr-only"> {r.name}</span>
                         </Button>
@@ -250,16 +243,7 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
                     </li>
                   ))}
                 </ul>
-              ) : null}
-
-              <Detectors
-                set={s}
-                presets={presets}
-                disabled={!!limits && s.rules.length >= limits.rules_per_set}
-                onAdd={(p) => addDetector(s, p)}
-                onRemove={(r) => run(() => api.guardrails.deleteRule(r.id))}
-                onAction={(r, action) => run(() => api.guardrails.updateRule(r.id, { action }))}
-              />
+              )}
             </article>
           ))}
         </div>
