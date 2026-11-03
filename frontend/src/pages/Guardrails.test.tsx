@@ -124,15 +124,15 @@ describe("Guardrails tab", () => {
   it("shows the reason when the server refuses a pattern, and keeps the dialog open", async () => {
     const user = userEvent.setup();
     g.ruleSets.mockResolvedValue(sets([set({ rules: [rule] })])); // not the first rule: no consent step
-    g.createRule.mockRejectedValue(new Error("pattern is too slow (it could stall requests); simplify it"));
+    g.createRule.mockRejectedValue(new Error("pattern has no visible characters"));
     open();
     await user.click(await screen.findByRole("button", { name: /Add rule to No secrets/ }));
     const dialog = await screen.findByRole("dialog", { name: "Add a rule" });
-    await user.type(within(dialog).getByLabelText("Rule name"), "slow");
-    await user.selectOptions(within(dialog).getByLabelText("What to look for"), "regex");
-    await user.type(within(dialog).getByLabelText("Regular expression"), "(a|aa)+$");
+    await user.type(within(dialog).getByLabelText("Rule name"), "blank");
+    await user.type(within(dialog).getByLabelText("Word or phrase"), "\u200b");
     await user.click(within(dialog).getByRole("button", { name: "Add rule" }));
-    expect(await within(dialog).findByText(/pattern is too slow/)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/no visible characters/)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("What to look for")).not.toBeInTheDocument(); // words only: no pattern option
   });
 
   it("tries a rule on sample text without saving anything", async () => {
@@ -164,6 +164,60 @@ describe("Guardrails tab", () => {
     expect(within(article).getByText(/Used by support-bot/)).toBeInTheDocument();
     await user.click(within(article).getByRole("button", { name: /Disable Codename/ }));
     await waitFor(() => expect(g.updateRule).toHaveBeenCalledWith(70, { enabled: false }));
+  });
+
+  it("offers built-in detectors as checkboxes in a closable section, closed until one is on", async () => {
+    const user = userEvent.setup();
+    g.ruleSets.mockResolvedValue(sets([set()]));
+    g.presets.mockResolvedValue([
+      { id: "card", label: "Payment card numbers", description: "13-19 digit numbers that pass the Luhn check." },
+      { id: "email", label: "Email addresses", description: "Anything shaped like name@domain.tld." },
+    ]);
+    open();
+    const toggle = await screen.findByRole("button", { name: /Built-in detectors/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveTextContent("none on");
+    expect(screen.queryByRole("checkbox", { name: /Payment card numbers/ })).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("checkbox", { name: /Payment card numbers/ })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Email addresses/ })).not.toBeChecked();
+    await user.click(toggle);
+    expect(screen.queryByRole("checkbox", { name: /Email addresses/ })).not.toBeInTheDocument();
+  });
+
+  it("ticking a detector adds it as Flag (after the one-time consent), and the section opens by itself once one is on", async () => {
+    const user = userEvent.setup();
+    g.ruleSets.mockResolvedValue(sets([set()]));
+    g.createRule.mockResolvedValue({ ...rule, id: 71, name: "Payment card numbers", kind: "preset", pattern: null, preset_id: "card", action: "flag" });
+    open();
+    await user.click(await screen.findByRole("button", { name: /Built-in detectors/ }));
+    await user.click(screen.getByRole("checkbox", { name: /Payment card numbers/ }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "I understand" }));
+    await waitFor(() =>
+      expect(g.createRule).toHaveBeenCalledWith(7, { name: "Payment card numbers", kind: "preset", preset_id: "card", action: "flag" }),
+    );
+  });
+
+  it("shows ticked detectors with their action, changes it, and unticking removes the rule", async () => {
+    const user = userEvent.setup();
+    const card = { ...rule, id: 71, name: "Payment card numbers", kind: "preset" as const, pattern: null, preset_id: "card", action: "flag" as const };
+    g.ruleSets.mockResolvedValue(sets([set({ rules: [rule, card] })]));
+    g.updateRule.mockResolvedValue({ ...card, action: "block" });
+    g.deleteRule.mockResolvedValue({ id: 71 });
+    open();
+    const toggle = await screen.findByRole("button", { name: /Built-in detectors/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "true"); // one is on, so the section starts open
+    expect(toggle).toHaveTextContent("1 of 1 on");
+    expect(screen.getByRole("checkbox", { name: /Payment card numbers/ })).toBeChecked();
+    // the detector is not repeated in the words list
+    const words = screen.getByRole("list", { name: "Rules in No secrets" });
+    expect(within(words).queryByText("Payment card numbers")).not.toBeInTheDocument();
+    expect(within(words).getAllByText("Codename").length).toBeGreaterThan(0);
+    await user.selectOptions(screen.getByLabelText("Action for Payment card numbers"), "block");
+    await waitFor(() => expect(g.updateRule).toHaveBeenCalledWith(71, { action: "block" }));
+    await user.click(screen.getByRole("checkbox", { name: /Payment card numbers/ }));
+    await waitFor(() => expect(g.deleteRule).toHaveBeenCalledWith(71));
   });
 
   it("confirms before deleting a rule set", async () => {

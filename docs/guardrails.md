@@ -6,9 +6,12 @@
 
 ## Where it is in the UI
 
-Workspace > **Guardrails** (`?tab=guardrails`): rule sets with their rules (Flag/Block shown as text), add/edit rule
-drawer with a **Try it** box (runs the real engine on typed text, stores nothing; a rule that is invalid or could stall
-requests is refused with the reason), enable/disable, delete with confirmation, and an Activity list. The first rule in a
+Workspace > **Guardrails** (`?tab=guardrails`): rule sets with their words and phrases (Flag/Block shown as text), an
+add/edit rule drawer with a **Try it** box (runs the real engine on typed text, stores nothing; an invalid entry is refused
+with the reason), a closable **Built-in detectors** section per set (a checkbox for each detector, added as Flag and with
+its own Flag/Block choice; unticking removes it), enable/disable, delete with confirmation, and an Activity list. New rules
+are words or phrases only: the UI no longer offers regular expressions (the API still accepts and validates them, and any
+saved earlier stay editable). The first rule in a
 workspace asks for a one-time acknowledgement that admins will be able to read short redacted fragments of matching
 requests. Keys: the create-key drawer has an optional "Content rules" section, a key's "⋯" menu has **Content rules**
 (tick the sets; saved immediately), and a key with sets shows "Rules: <set>" under its name.

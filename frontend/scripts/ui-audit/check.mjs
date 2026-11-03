@@ -269,12 +269,16 @@ await check("guardrailsFlow", async () => {
     await dlg.getByRole("button", { name: "Try it" }).click(); await page.waitForTimeout(500);
     const matched = await dlg.getByText(/Matches/).count();
     let v = await axeRun(page); out[`dialog-${w}-${theme}`] = { matched, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
-    await dlg.getByRole("combobox", { name: "What to look for" }).selectOption("regex");
-    await dlg.getByLabel("Regular expression").fill("(a|aa)+$");
-    await dlg.getByRole("button", { name: "Add rule" }).click(); await page.waitForTimeout(900);
-    const refused = await dlg.getByText(/too slow/).count() + await page.getByText(/first rule/).count();
-    out[`refused-${w}-${theme}`] = { refused: refused > 0 };
+    const noPatternOption = await dlg.getByLabel("What to look for").count() === 0; // words only: regex is not offered
+    out[`refused-${w}-${theme}`] = { refused: noPatternOption };
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    await load(page, "/workspace?tab=guardrails", "text=Content rules");
+    const det = page.getByRole("button", { name: /Built-in detectors/ }).last();
+    if (await det.getAttribute("aria-expanded") !== "true") await det.click();
+    await page.waitForTimeout(300);
+    const boxes = await page.getByRole("checkbox", { name: /Payment card numbers|Email addresses/ }).count();
+    v = await axeRun(page); const md = await page.evaluate(MEASURE);
+    out[`detectors-${w}-${theme}`] = { boxes, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), small: md.small, overflow: md.overflow };
     await load(page, "/workspace", "text=Virtual keys");
     await page.getByRole("button", { name: "More actions for support-bot" }).click();
     await page.getByRole("menuitem", { name: "Content rules" }).click(); await page.waitForTimeout(400);
@@ -283,8 +287,8 @@ await check("guardrailsFlow", async () => {
     out[`keyPanel-${w}-${theme}`] = { panel, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), small: m.small, overflow: m.overflow };
     await ctx.close();
   }
-  const bad = Object.entries(out).filter(([k, v]) => v.axe || v.small || v.overflow > 0 || v.matched === 0 || v.panel === 0 || v.refused === false);
-  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: Try it matches, slow pattern refused, key panel opens, 0 violations` };
+  const bad = Object.entries(out).filter(([k, v]) => v.axe || v.small || v.overflow > 0 || v.matched === 0 || v.panel === 0 || v.refused === false || v.boxes === 0);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: Try it matches, no pattern option, detectors section, key panel opens, 0 violations` };
 });
 
 await check("guardrailBellAndRequests", async () => {

@@ -1,40 +1,31 @@
 import { useState } from "react";
-import {
-  api,
-  type GuardrailAction,
-  type GuardrailKind,
-  type GuardrailPreset,
-  type GuardrailRule,
-  type GuardrailTestResult,
-} from "../../../lib/api";
+import { api, type GuardrailAction, type GuardrailKind, type GuardrailRule, type GuardrailTestResult } from "../../../lib/api";
 import { Button } from "../../../components/ui/Button";
 import { Dialog, DialogContent } from "../../../components/ui/Dialog";
-import { Field, Input, Select, Textarea } from "../../../components/ui/Field";
+import { Field, Input, Textarea } from "../../../components/ui/Field";
 import { InlineAlert } from "../../../components/ui/InlineAlert";
-import { ACTION_HELP, ACTION_LABEL, KIND_LABEL } from "./labels";
+import { ACTION_HELP, ACTION_LABEL } from "./labels";
 
-/** Create or edit one rule, with a "Try it" box that runs the same engine the gateway uses on text typed here (nothing
- *  is stored). The pattern is checked on save: a pattern that is invalid, matches empty text, or could stall requests
- *  is refused with the reason. */
+/** Create or edit one word/phrase rule, with a "Try it" box that runs the same engine the gateway uses on text typed
+ *  here (nothing is stored). New rules are always words or phrases (built-in detectors are ticked in their own section
+ *  of the rule set); a rule saved earlier as a pattern can still be edited. The server refuses a bad entry with the
+ *  reason, which is shown here. */
 export function RuleDialog({
   setName,
   rule,
-  presets,
   patternLimit,
   onSave,
   onClose,
 }: {
   setName: string;
   rule: GuardrailRule | null; // null = a new rule
-  presets: GuardrailPreset[];
   patternLimit: number;
   onSave: (body: { name: string; kind: GuardrailKind; pattern: string | null; preset_id: string | null; action: GuardrailAction; whole_word: boolean }) => Promise<void>;
   onClose: () => void;
 }) {
+  const kind: GuardrailKind = rule?.kind ?? "phrase";
   const [name, setName_] = useState(rule?.name ?? "");
-  const [kind, setKind] = useState<GuardrailKind>(rule?.kind ?? "phrase");
   const [pattern, setPattern] = useState(rule?.pattern ?? "");
-  const [presetId, setPresetId] = useState(rule?.preset_id ?? presets[0]?.id ?? "card");
   const [action, setAction] = useState<GuardrailAction>(rule?.action ?? "flag");
   const [wholeWord, setWholeWord] = useState(rule?.whole_word ?? false);
   const [busy, setBusy] = useState(false);
@@ -43,9 +34,8 @@ export function RuleDialog({
   const [tried, setTried] = useState<GuardrailTestResult | null>(null);
   const [tryErr, setTryErr] = useState<string | null>(null);
 
-  const isPreset = kind === "preset";
-  const ready = name.trim() !== "" && (isPreset || pattern.trim() !== "");
-  const spec = { kind, pattern: isPreset ? null : pattern, preset_id: isPreset ? presetId : null, whole_word: kind === "phrase" && wholeWord };
+  const ready = name.trim() !== "" && pattern.trim() !== "";
+  const spec = { kind, pattern, preset_id: null, whole_word: kind === "phrase" && wholeWord };
 
   async function save() {
     setBusy(true);
@@ -73,45 +63,19 @@ export function RuleDialog({
       <DialogContent placement="right" title={rule ? "Edit rule" : "Add a rule"} description={`In the rule set “${setName}”.`}>
         <div className="space-y-4 p-4">
           <Field label="Rule name" hint="Shown in notifications and on the Requests page.">
-            {(c) => <Input {...c} value={name} maxLength={80} onChange={(e) => setName_(e.target.value)} placeholder="e.g. Customer card numbers" />}
+            {(c) => <Input {...c} value={name} maxLength={80} onChange={(e) => setName_(e.target.value)} placeholder="e.g. Internal project name" />}
           </Field>
 
-          <Field label="What to look for">
-            {(c) => (
-              <Select {...c} value={kind} disabled={!!rule} onChange={(e) => setKind(e.target.value as GuardrailKind)}>
-                {(Object.keys(KIND_LABEL) as GuardrailKind[]).map((k) => (
-                  <option key={k} value={k}>
-                    {KIND_LABEL[k]}
-                  </option>
-                ))}
-              </Select>
-            )}
+          <Field
+            label={kind === "phrase" ? "Word or phrase" : "Pattern"}
+            hint={
+              kind === "phrase"
+                ? "Not case-sensitive. Also matches simple disguises such as full-width letters or hidden zero-width characters."
+                : `Up to ${patternLimit} characters. This rule was saved as a pattern (regular expression); new rules use words or phrases.`
+            }
+          >
+            {(c) => <Input {...c} value={pattern} maxLength={patternLimit} onChange={(e) => setPattern(e.target.value)} className={kind === "regex" ? "font-mono" : undefined} />}
           </Field>
-
-          {isPreset ? (
-            <Field label="Detector" hint={presets.find((p) => p.id === presetId)?.description}>
-              {(c) => (
-                <Select {...c} value={presetId} onChange={(e) => setPresetId(e.target.value)}>
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-          ) : (
-            <Field
-              label={kind === "phrase" ? "Word or phrase" : "Regular expression"}
-              hint={
-                kind === "phrase"
-                  ? "Not case-sensitive. Also matches simple disguises such as full-width letters or hidden zero-width characters."
-                  : `Up to ${patternLimit} characters. Case matters unless you start with (?i). Slow or invalid patterns are refused.`
-              }
-            >
-              {(c) => <Input {...c} value={pattern} maxLength={patternLimit} onChange={(e) => setPattern(e.target.value)} className={kind === "regex" ? "font-mono" : undefined} />}
-            </Field>
-          )}
 
           {kind === "phrase" && (
             <label className="flex min-h-7 items-start gap-2 text-sm text-fg">
@@ -150,9 +114,7 @@ export function RuleDialog({
                     {tried.snippet ? <span className="text-fg-muted"> Context: “{tried.snippet}”</span> : null}
                   </>
                 ) : (
-                  <>
-                    <strong>No match.</strong>
-                  </>
+                  <strong>No match.</strong>
                 )}
               </p>
             )}
