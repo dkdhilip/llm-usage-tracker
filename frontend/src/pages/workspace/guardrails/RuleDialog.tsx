@@ -69,9 +69,12 @@ export function RuleDialog({
           <Field
             label={kind === "phrase" ? "Word or phrase" : "Pattern"}
             hint={
-              kind === "phrase"
-                ? "Not case-sensitive. Also matches simple disguises such as full-width letters or hidden zero-width characters."
-                : `Up to ${patternLimit} characters. This rule was saved as a pattern (regular expression); new rules use words or phrases.`
+              kind === "phrase" ? (
+                <span data-testid="phrase-example">
+                  For example: <em>project falcon</em>, <em>confidential</em> or <em>salary list</em>. Capital letters don't matter, and it matches anywhere in the
+                  request. One word or phrase per rule: add another rule for each one you want to catch.
+                </span>
+              ) : `Up to ${patternLimit} characters. This rule was saved as a pattern (regular expression); new rules use words or phrases.`
             }
           >
             {(c) => <Input {...c} value={pattern} maxLength={patternLimit} onChange={(e) => setPattern(e.target.value)} className={kind === "regex" ? "font-mono" : undefined} />}

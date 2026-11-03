@@ -135,6 +135,19 @@ describe("Guardrails tab", () => {
     expect(within(dialog).queryByLabelText("What to look for")).not.toBeInTheDocument(); // words only: no pattern option
   });
 
+  it("gives managers a plain example under the word or phrase box", async () => {
+    const user = userEvent.setup();
+    g.ruleSets.mockResolvedValue(sets([set()]));
+    open();
+    await user.click(await screen.findByRole("button", { name: /Add rule to No secrets/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a rule" });
+    const example = within(dialog).getByTestId("phrase-example");
+    expect(example).toHaveTextContent(/For example: project falcon, confidential or salary list/);
+    expect(example).toHaveTextContent(/One word or phrase per rule/);
+    // the hint is tied to the box, so a screen reader reads it with the field
+    expect(within(dialog).getByLabelText("Word or phrase")).toHaveAccessibleDescription(/project falcon/);
+  });
+
   it("tries a rule on sample text without saving anything", async () => {
     const user = userEvent.setup();
     g.ruleSets.mockResolvedValue(sets([set()]));
