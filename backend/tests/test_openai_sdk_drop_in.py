@@ -332,7 +332,9 @@ def test_streaming_without_include_usage_should_still_record_tokens(sdk, make_li
 
 
 @pytest.mark.xfail(
-    strict=True,
+    strict=False,  # not strict: with the mocked provider the stream can finish before the client closes it, so on a
+    # fast or slow CI machine the row is sometimes written and the test "passes" (XPASS). That is a race in the test,
+    # not a fix of the gap, and must not turn CI red.
     reason="KNOWN GAP (gateway not modified): usage is recorded by code that runs AFTER the stream's last "
     "chunk, so a client that abandons a stream midway (a Stop button, a client timeout) leaves NO usage row "
     "at all, although the provider still bills for what was generated. Measured: 0 rows after 6s. Remove "
