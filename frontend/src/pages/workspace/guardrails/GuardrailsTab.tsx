@@ -16,6 +16,7 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { Field, Input } from "../../../components/ui/Field";
 import { InlineAlert } from "../../../components/ui/InlineAlert";
 import { useConfirmDialog } from "../../../components/ui/useConfirmDialog";
+import { Detectors } from "./Detectors";
 import { RuleDialog } from "./RuleDialog";
 import { ACTION_LABEL, KIND_LABEL, activityLabel, ruleSummary } from "./labels";
 
@@ -59,34 +60,41 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
     }
   }
 
+  // The first rule in the workspace is the moment members' prompts start being read for matches: say so once.
+  async function consentToFirstRule(): Promise<boolean> {
+    if (totalRules > 0) return true;
+    return confirm({
+      title: "Before you add the first rule",
+      confirmLabel: "I understand",
+      tone: "default",
+      body: (
+        <>
+          <p>
+            Content rules read the text of requests sent with the keys they are attached to. When a rule matches, you can
+            see a short, redacted piece of the surrounding text (never the matched text itself, and none at all for card
+            numbers, keys or emails) for {status?.retention_days ?? 30} days.
+          </p>
+          <p className="mt-2">Tell your team that requests may be checked. This is a policy aid, not a security boundary.</p>
+        </>
+      ),
+    });
+  }
+
   async function saveRule(
     set: GuardrailRuleSet,
     rule: GuardrailRule | null,
     body: { name: string; kind: GuardrailRule["kind"]; pattern: string | null; preset_id: string | null; action: GuardrailRule["action"]; whole_word: boolean },
   ) {
-    // The first rule in the workspace is the moment members' prompts start being read for matches: say so once.
-    if (!rule && totalRules === 0) {
-      const ok = await confirm({
-        title: "Before you add the first rule",
-        confirmLabel: "I understand",
-        tone: "default",
-        body: (
-          <>
-            <p>
-              Content rules read the text of requests sent with the keys they are attached to. When a rule matches, you can
-              see a short, redacted piece of the surrounding text (never the matched text itself, and none at all for card
-              numbers, keys or emails) for {status?.retention_days ?? 30} days.
-            </p>
-            <p className="mt-2">Tell your team that requests may be checked. This is a policy aid, not a security boundary.</p>
-          </>
-        ),
-      });
-      if (!ok) throw new Error("Cancelled: no rule was added.");
-    }
+    if (!rule && !(await consentToFirstRule())) throw new Error("Cancelled: no rule was added.");
     if (rule) await api.guardrails.updateRule(rule.id, body);
     else await api.guardrails.createRule(set.id, body);
     setEditing(null);
     changed();
+  }
+
+  async function addDetector(set: GuardrailRuleSet, preset: GuardrailPreset) {
+    if (!(await consentToFirstRule())) return;
+    await run(() => api.guardrails.createRule(set.id, { name: preset.label, kind: "preset", preset_id: preset.id, action: "flag" }));
   }
 
   async function removeSet(s: GuardrailRuleSet) {
@@ -212,9 +220,11 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
 
               {s.rules.length === 0 ? (
                 <p className="text-sm text-fg-muted">No rules in this set yet.</p>
-              ) : (
+              ) : s.rules.some((r) => r.kind !== "preset") ? (
                 <ul className="divide-y divide-line rounded-md border border-line" aria-label={`Rules in ${s.name}`}>
-                  {s.rules.map((r) => (
+                  {s.rules
+                    .filter((r) => r.kind !== "preset")
+                    .map((r) => (
                     <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -240,7 +250,16 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
                     </li>
                   ))}
                 </ul>
-              )}
+              ) : null}
+
+              <Detectors
+                set={s}
+                presets={presets}
+                disabled={!!limits && s.rules.length >= limits.rules_per_set}
+                onAdd={(p) => addDetector(s, p)}
+                onRemove={(r) => run(() => api.guardrails.deleteRule(r.id))}
+                onAction={(r, action) => run(() => api.guardrails.updateRule(r.id, { action }))}
+              />
             </article>
           ))}
         </div>
@@ -296,7 +315,6 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
         <RuleDialog
           setName={editing.set.name}
           rule={editing.rule}
-          presets={presets}
           patternLimit={limits.pattern_chars}
           onSave={(body) => saveRule(editing.set, editing.rule, body)}
           onClose={() => setEditing(null)}
