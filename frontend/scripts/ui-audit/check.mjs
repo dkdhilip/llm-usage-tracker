@@ -268,7 +268,11 @@ await check("guardrailsFlow", async () => {
     await dlg.getByLabel("Try it").fill("the bluefalcon plan");
     await dlg.getByRole("button", { name: "Try it" }).click(); await page.waitForTimeout(500);
     const matched = await dlg.getByText(/Matches/).count();
-    let v = await axeRun(page); out[`dialog-${w}-${theme}`] = { matched, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
+    await dlg.getByRole("button", { name: "How this works" }).hover(); await page.waitForTimeout(250);
+    const tipShown = await dlg.getByRole("tooltip").evaluate((el) => el.getBoundingClientRect().width > 100 && /A word: salary/.test(el.textContent));
+    const tipInside = await dlg.getByRole("tooltip").evaluate((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth; });
+    if (SHOTS) await page.screenshot({ path: join(OUT, "shots", `guardrails-tip-${w}-${theme}.png`) });
+    let v = await axeRun(page); out[`dialog-${w}-${theme}`] = { matched, tipShown, tipInside, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(",") };
     const noPatternOption = await dlg.getByLabel("What to look for").count() === 0; // words only: regex is not offered
     out[`refused-${w}-${theme}`] = { refused: noPatternOption };
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
@@ -280,8 +284,8 @@ await check("guardrailsFlow", async () => {
     out[`keyPanel-${w}-${theme}`] = { panel, axe: v.reduce((a, x) => a + x.n, 0), ids: v.map((x) => x.id).join(","), small: m.small, overflow: m.overflow };
     await ctx.close();
   }
-  const bad = Object.entries(out).filter(([k, v]) => v.axe || v.small || v.overflow > 0 || v.matched === 0 || v.panel === 0 || v.refused === false);
-  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: Try it matches, no pattern option, key panel opens, 0 violations` };
+  const bad = Object.entries(out).filter(([k, v]) => v.axe || v.small || v.overflow > 0 || v.matched === 0 || v.tipShown === false || v.tipInside === false || v.panel === 0 || v.refused === false);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: Try it matches, info tip shows on hover, no pattern option, key panel opens, 0 violations` };
 });
 
 await check("guardrailBellAndRequests", async () => {

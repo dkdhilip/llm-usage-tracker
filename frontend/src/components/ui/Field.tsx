@@ -29,12 +29,15 @@ export interface FieldControlProps {
  *  (aria-describedby). An error also marks the control invalid and is announced when it appears. */
 export function Field({
   label,
+  labelExtra,
   hint,
   error,
   className,
   children,
 }: {
   label: string;
+  /** something small beside the label, such as an InfoTip */
+  labelExtra?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
   className?: string;
@@ -46,9 +49,18 @@ export function Field({
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-ui font-medium text-fg">
-        {label}
-      </label>
+      {labelExtra ? (
+        <div className="relative flex items-center gap-1">
+          <label htmlFor={id} className="text-ui font-medium text-fg">
+            {label}
+          </label>
+          {labelExtra}
+        </div>
+      ) : (
+        <label htmlFor={id} className="text-ui font-medium text-fg">
+          {label}
+        </label>
+      )}
       {children({ id, "aria-describedby": describedBy, ...(error ? { "aria-invalid": true as const } : {}) })}
       {hint && (
         <p id={hintId} className="text-xs text-fg-muted">

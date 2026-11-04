@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -135,17 +135,44 @@ describe("Guardrails tab", () => {
     expect(within(dialog).queryByLabelText("What to look for")).not.toBeInTheDocument(); // words only: no pattern option
   });
 
-  it("gives managers a plain example under the word or phrase box", async () => {
+  it("shows an example of a word and of a phrase in the box, and explains in simple words on an info icon", async () => {
     const user = userEvent.setup();
     g.ruleSets.mockResolvedValue(sets([set()]));
     open();
     await user.click(await screen.findByRole("button", { name: /Add rule to No secrets/ }));
     const dialog = await screen.findByRole("dialog", { name: "Add a rule" });
-    const example = within(dialog).getByTestId("phrase-example");
-    expect(example).toHaveTextContent(/For example: project falcon, confidential or salary list/);
-    expect(example).toHaveTextContent(/One word or phrase per rule/);
-    // the hint is tied to the box, so a screen reader reads it with the field
-    expect(within(dialog).getByLabelText("Word or phrase")).toHaveAccessibleDescription(/project falcon/);
+    const box = within(dialog).getByLabelText("Word or phrase");
+    expect(box).toHaveAttribute("placeholder", "A word like salary, or a phrase like project falcon");
+    const info = within(dialog).getByRole("button", { name: "How this works" });
+    // closed until asked: nothing visible, but a screen reader still gets it as the button's description
+    expect(info).toHaveAttribute("aria-expanded", "false");
+    expect(info).toHaveAccessibleDescription(/Type one word or one short phrase/);
+    expect(within(dialog).getByRole("tooltip")).toHaveClass("sr-only");
+    fireEvent.mouseEnter(info.parentElement!); // (a modal dialog blocks simulated pointer moves in jsdom)
+    expect(info).toHaveAttribute("aria-expanded", "true");
+    const tip = within(dialog).getByRole("tooltip");
+    expect(tip).not.toHaveClass("sr-only");
+    expect(tip).toHaveTextContent("A word: salary");
+    expect(tip).toHaveTextContent("A phrase: project falcon");
+    expect(tip).toHaveTextContent("Big or small letters do not matter.");
+    fireEvent.mouseLeave(info.parentElement!);
+    expect(info).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("the info icon also opens from the keyboard and closes with Escape", async () => {
+    const user = userEvent.setup();
+    g.ruleSets.mockResolvedValue(sets([set()]));
+    open();
+    await user.click(await screen.findByRole("button", { name: /Add rule to No secrets/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a rule" });
+    const info = within(dialog).getByRole("button", { name: "How this works" });
+    act(() => info.focus());
+    expect(info).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(info).toHaveAttribute("aria-expanded", "false")); // dismissible without moving focus
+    expect(screen.getByRole("dialog", { name: "Add a rule" })).toBeInTheDocument(); // the first Escape closed only the tip
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a rule" })).not.toBeInTheDocument()); // the second closes the drawer
   });
 
   it("tries a rule on sample text without saving anything", async () => {
