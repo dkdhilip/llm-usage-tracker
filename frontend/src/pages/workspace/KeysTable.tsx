@@ -8,7 +8,7 @@ import { Menu, MenuButton, MenuItem, MenuList, MenuSeparator } from "../../compo
 import { ScrollRegion } from "../../components/ui/ScrollRegion";
 import { providerColor } from "../../lib/chartColors";
 import { keyStatus } from "../../lib/keyOptions";
-import { num, providerName, usd } from "../../lib/format";
+import { num, providerName, usd, usdShort } from "../../lib/format";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { KeyRulesEditor, KeyRulesPill } from "./guardrails/KeyRules";
 import { KeyLoggingEditor, KeyLoggingPill } from "./KeyLogging";
@@ -82,14 +82,14 @@ function Budget({ k }: { k: KeyRow }) {
   const warn = !over && pct >= 80;
   const per = k.budget_period === "custom" ? "" : `/${k.budget_period[0]}`;
   return (
-    <div className="w-36">
-      <div className="flex justify-between gap-2 text-xs text-fg-muted">
+    <div className="w-40" title={`${usd(k.spend_period)} of ${usd(limit)}`}>
+      <div className="flex justify-between gap-2 whitespace-nowrap text-xs text-fg-muted">
         <span>
-          {usd(k.spend_period)} of {usd(limit)}
+          {usdShort(k.spend_period)} of {limit < 0.01 ? usd(limit) : usdShort(limit)}
           {per}
         </span>
         <span className={over ? "font-semibold text-danger-fg" : warn ? "font-semibold text-warning-fg" : undefined}>
-          {over ? "Over budget" : `${Math.max(1, Math.round(pct))}%`}
+          {over ? "Over budget" : pct === 0 ? "0%" : `${Math.max(1, Math.round(pct))}%`}
         </span>
       </div>
       <div
@@ -102,7 +102,7 @@ function Budget({ k }: { k: KeyRow }) {
       >
         <div
           className={`h-full rounded ${over ? "bg-red-600" : warn ? "bg-amber-500" : "bg-brand-500"}`}
-          style={{ width: `${Math.min(100, Math.max(2, pct))}%` }}
+          style={{ width: `${pct === 0 ? 0 : Math.min(100, Math.max(2, pct))}%` }}
         />
       </div>
     </div>
@@ -228,7 +228,7 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-fg-muted">
               <Owner name={k.assigned_username} />
               <span>
-                <CostCell cost={k.cost} requests={k.requests} unpriced={k.unpriced_requests} /> · {num(k.requests)} requests
+                <CostCell cost={k.cost} requests={k.requests} unpriced={k.unpriced_requests} short /> · {num(k.requests)} requests
               </span>
             </div>
             <div className="mt-2">
@@ -297,7 +297,7 @@ export function KeysTable({ keys, a, empty }: { keys: KeyRow[]; a: KeyActions; e
                   </td>
                   <td className="py-2.5 pr-3 text-right tabular-nums">{num(k.requests)}</td>
                   <td className="py-2.5 pr-3 text-right tabular-nums">
-                    <CostCell cost={k.cost} requests={k.requests} unpriced={k.unpriced_requests} />
+                    <CostCell cost={k.cost} requests={k.requests} unpriced={k.unpriced_requests} short stacked />
                   </td>
                   <td className="py-2.5 pr-3">
                     <Budget k={k} />
