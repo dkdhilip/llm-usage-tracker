@@ -5,16 +5,18 @@ import { cn } from "../../lib/cn";
 export const Tabs = RT.Root;
 
 /** The row of tabs. It scrolls sideways on a narrow screen (so no tab is cut off) and the arrow keys move between
- *  tabs; the panel of the selected tab is the next thing in the tab order. */
+ *  tabs; the panel of the selected tab is the next thing in the tab order. Nothing in it may stick out below: a
+ *  sideways-scrolling box that is even 1px too tall grows a small up/down scrollbar (the stray arrows), so the
+ *  vertical direction is closed and the tabs do not overlap the line under them. */
 export function TabList({ className, ...rest }: ComponentPropsWithoutRef<typeof RT.List>) {
-  return <RT.List className={cn("mb-4 flex gap-1 overflow-x-auto border-b border-line", className)} {...rest} />;
+  return <RT.List className={cn("mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line", className)} {...rest} />;
 }
 
 export function Tab({ className, children, count, ...rest }: ComponentPropsWithoutRef<typeof RT.Trigger> & { count?: number }) {
   return (
     <RT.Trigger
       className={cn(
-        "-mb-px inline-flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3.5 text-sm font-medium text-fg-muted",
+        "inline-flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3.5 text-sm font-medium text-fg-muted",
         "hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-text",
         "data-[state=active]:border-brand-600 data-[state=active]:text-brand-text",
         className,

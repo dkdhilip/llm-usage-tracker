@@ -22,7 +22,8 @@ export interface CostText {
 /** How to show a cost total. `unpriced` is how many of `requests` have no cost at all (the model has no price):
  *  those add nothing to `cost`, so a bare "$0.000000" would read as "free". Only a request that was priced at
  *  exactly $0 is free. An API that does not send the count is treated safely: a 0 total counts as unknown. */
-export function costLabel(cost: number, requests: number, unpriced?: number): CostText {
+export function costLabel(cost: number, requests: number, unpriced?: number, short = false): CostText {
+  const usd = short ? usdShort : exactUsd;
   if (requests <= 0) return { text: "—", unknown: false };
   const u = unpriced ?? (cost === 0 ? requests : 0);
   if (u >= requests) {
@@ -41,14 +42,25 @@ export function costLabel(cost: number, requests: number, unpriced?: number): Co
     };
   }
   if (cost === 0) return { text: "Free", unknown: false, title: "These requests were priced at $0." };
-  return { text: usd(cost), unknown: false };
+  return { text: usd(cost), unknown: false, ...(short ? { title: `Exactly ${exactUsd(cost)}` } : {}) };
 }
 
-export function usd(n: number | null): string {
+function exactUsd(n: number | null): string {
   if (n == null) return "—";
   if (n >= 1) return `$${n.toFixed(2)}`;
   if (n >= 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(6)}`;
+}
+
+/** Every digit, for places that add up small costs (a single request can cost $0.000187). */
+export const usd = exactUsd;
+
+/** Whole cents, for a table where a row is read at a glance: $12.50, $0.45, and "<$0.01" for anything smaller but
+ *  not nothing (so a tiny cost never reads as $0.00). */
+export function usdShort(n: number | null): string {
+  if (n == null) return "—";
+  if (n > 0 && n < 0.005) return "<$0.01";
+  return `$${n.toFixed(2)}`;
 }
 
 // cost_source: "provider" (real charge) | "workspace" (this workspace's own

@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { costLabel, providerName } from "./format";
+import { costLabel, providerName, usdShort } from "./format";
+
+describe("usdShort: whole cents for a table", () => {
+  it("shows two decimals, and never a tiny cost as $0.00", () => {
+    expect(usdShort(0)).toBe("$0.00");
+    expect(usdShort(0.000859)).toBe("<$0.01");
+    expect(usdShort(0.00288)).toBe("<$0.01");
+    expect(usdShort(0.45678)).toBe("$0.46");
+    expect(usdShort(12.5)).toBe("$12.50");
+    expect(usdShort(null)).toBe("—");
+  });
+  it("costLabel in short form keeps the unpriced note and puts the exact amount in the tooltip", () => {
+    expect(costLabel(0.00288, 20, 4, true)).toMatchObject({ text: "<$0.01", note: "+4 unpriced" });
+    expect(costLabel(0.45678, 5, 0, true)).toEqual({ text: "$0.46", unknown: false, title: "Exactly $0.4568" });
+  });
+});
 
 describe("providerName", () => {
   it("writes the four providers as their brands", () => {
