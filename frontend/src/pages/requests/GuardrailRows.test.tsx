@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type GuardrailHit, type RequestRow } from "../../lib/api";
 import { GuardrailSection } from "./GuardrailSection";
+import { StoredContentSections } from "./content";
 import { RequestFilters } from "./RequestFilters";
 import { RequestList } from "./RequestList";
 
@@ -90,8 +91,17 @@ describe("the inspector's Content rules section", () => {
     expect(screen.getByText("Codename")).toBeInTheDocument();
     expect(screen.getByText("Block")).toBeInTheDocument();
     expect(screen.getByText(/2 matches · in the user text/)).toBeInTheDocument();
-    expect(screen.getByText(/matched text is never stored/)).toBeInTheDocument();
+    expect(screen.getByText(/prompt of a flagged or blocked request is kept/)).toBeInTheDocument();
     expect(g.hitItems).toHaveBeenCalledWith(1);
+  });
+
+  it("highlights the matched words inside their context when the server kept them", async () => {
+    g.hitItems.mockResolvedValue({ items: [hit({ matched_text: "Blue Falcon" })], retention_days: 30 });
+    render(<GuardrailSection row={row({ status: "blocked", guardrail: "blocked" })} />);
+    const mark = await screen.findByText("Blue Falcon");
+    expect(mark.tagName).toBe("MARK");
+    expect(mark.parentElement).toHaveTextContent("tell me the Blue Falcon plan");
+    expect(mark.parentElement).not.toHaveTextContent("[matched]");
   });
 
   it("says why there is no context when none was kept", async () => {
@@ -116,5 +126,30 @@ describe("the inspector's Content rules section", () => {
     g.hitItems.mockRejectedValue(new Error("database unavailable"));
     render(<GuardrailSection row={row({ guardrail: "blocked" })} />);
     expect(await screen.findByText(/Couldn't load the matches: database unavailable/)).toBeInTheDocument();
+  });
+});
+
+describe("the prompt kept for a flagged or blocked request", () => {
+  const content = (response = { text: "", summary: "" }) => ({
+    usage_id: 1, retention_days: 30, content_status: "available" as const, content: { v: 1, kind: "chat", request: { messages: [{ role: "user", text: "the launch codename is bluefalcon" }] }, response },
+    request_truncated: false, response_truncated: false, images: [],
+  });
+
+  it("shows the exact prompt, and no empty Response box for a blocked request (it never reached the provider)", () => {
+    render(<StoredContentSections content={content()} error={null} usageId={1} requestOnly />);
+    expect(screen.getByRole("region", { name: "Prompt: user" })).toHaveTextContent("the launch codename is bluefalcon");
+    expect(screen.queryByRole("heading", { name: "Response" })).not.toBeInTheDocument();
+  });
+
+  it("says so when a flagged request that went through has no stored response (logging is off)", () => {
+    render(<StoredContentSections content={content()} error={null} usageId={1} />);
+    expect(screen.getByRole("region", { name: "Prompt: user" })).toBeInTheDocument();
+    expect(screen.getByText(/No response was stored/)).toBeInTheDocument();
+  });
+
+  it("still shows the Response section for a flagged request that went through", () => {
+    render(<StoredContentSections content={content({ text: "ok", summary: "" })} error={null} usageId={1} />);
+    expect(screen.getByRole("region", { name: "Prompt: user" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Response" })).toBeInTheDocument();
   });
 });

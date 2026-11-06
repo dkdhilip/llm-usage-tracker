@@ -12,7 +12,8 @@ The shape of this module is the contract, so read it in this order:
 3.  `write_*_evidence` records evidence, guarded by an hourly ceiling and by its own failure handling.
 
 This is a policy aid, not a security boundary: word and pattern matching can be bypassed (misspelling, other
-languages, encodings). Nothing here ever logs or stores the matched text.
+languages, encodings). Nothing here ever logs the matched text. It is stored (encrypted, with its context, for admins,
+and deleted with the hit) only for a plain word or phrase rule; pattern and secret/PII matches are never stored.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app import content_capture
 from app.config import settings
 from app.content_capture import redact
 from app.crypto import encrypt
@@ -53,6 +55,10 @@ logger = logging.getLogger("app.guardrails")
 
 BLOCK_MESSAGE = "This request was blocked by your workspace's content rules."
 _MARK = "[matched]"
+# Around the matched words inside a stored snippet. Cleaned context never holds control characters, so these cannot
+# be confused with the text.
+_OPEN, _CLOSE = "\x02", "\x03"
+_MAX_SHOWN = 60  # characters of the matched words kept
 _MAX_OCCURRENCES = 99
 
 # ----------------------------------------------------------------------------------------------- results
@@ -81,7 +87,7 @@ class Hit:
     rule: Rule
     role: str
     occurrences: int
-    snippet: str | None  # redacted context with the match replaced by [matched]; None when none is safe
+    snippet: str | None  # redacted context; the match is [matched], or (word/phrase rules) the words between markers; None when none is safe
     ordinal: int = 0
 
 
@@ -100,6 +106,9 @@ class GuardResult:
 
     hits: list[Hit] = field(default_factory=list)  # flag hits of a request that went through
     unchecked: bool = False
+    # the request's text, to keep for the admin whatever the logging switches say (None: nothing matched, or a
+    # secret/PII detector did, whose promise is that the sensitive text is not kept)
+    capture: content_capture.ContentCapture | None = None
 
     @property
     def marker(self) -> str | None:
@@ -289,10 +298,29 @@ def _clean(s: str) -> str:
     return (" " if s[:1].isspace() else "") + " ".join(s.split()) + (" " if len(s) > 1 and s[-1:].isspace() else "")
 
 
-def build_snippet(text: str, os_: int, oe: int, matched_norm: str) -> str | None:
-    """A few characters either side of the match with the match itself replaced by [matched]. Returns None rather than
-    risk showing the match: the context is cleaned and redacted, and if the matched text still appears in it (a
-    repeated word next to the match) there is no snippet."""
+def split_snippet(stored: str | None) -> tuple[str | None, str | None]:
+    """A stored snippet as (context with [matched] where the match was, the matched text or None). A snippet saved
+    without the match (older ones, pattern rules) has [matched] already and no matched text."""
+    if stored is None:
+        return None, None
+    a, b = stored.find(_OPEN), stored.find(_CLOSE)
+    if 0 <= a < b:
+        return stored[:a] + _MARK + stored[b + 1 :], stored[a + 1 : b]
+    return stored, None
+
+
+def _shown_match(s: str) -> str:
+    """The matched words as they were written, cleaned the same way as the context (secrets and long digit runs or
+    tokens masked, no control characters) and cut to a readable length."""
+    s = _clean("".join(c for c in s if unicodedata.category(c) != "Cf")).strip()
+    return s if len(s) <= _MAX_SHOWN else s[: _MAX_SHOWN - 1] + "…"
+
+
+def build_snippet(text: str, os_: int, oe: int, matched_norm: str, show_match: bool = False) -> str | None:
+    """A few characters either side of the match. By default the match itself is replaced by [matched], and there is
+    no snippet at all if the matched text still appears in the cleaned context (a repeated word next to it). With
+    `show_match` (a word or phrase the admin typed into a rule, so it tells them nothing new) the matched words are
+    kept between two marker characters, cleaned and cut short; `split_snippet` reads that back."""
     n = len(text)
     left = max(0, os_ - 20)
     while 0 < left < n and _is_extender(text[left]):
@@ -301,6 +329,9 @@ def build_snippet(text: str, os_: int, oe: int, matched_norm: str) -> str | None
     while 0 < right < n and _is_extender(text[right]):
         right += 1
     before, after = _clean(text[left:os_])[-50:], _clean(text[oe:right])[:50]
+    if show_match:
+        shown = _shown_match(text[os_:oe])
+        return f"{before}{_OPEN}{shown}{_CLOSE}{after}" if shown else None
     if matched_norm and matched_norm in _fold(before + " | " + after):
         return None
     out = f"{before}{_MARK}{after}"[:120]
@@ -439,14 +470,17 @@ def evaluate(segments: list[Segment], rules: list[Rule], *, oversize: bool = Fal
 
 def _snippet_for(rule: Rule, seg: Segment, a: int, b: int) -> str | None:
     """Evidence for one hit, or None. Secret/PII detectors never keep a snippet. Phrase/preset spans are in the
-    folded text and are mapped back through `map_span` (verified, else no snippet); regex spans are already exact."""
+    folded text and are mapped back through `map_span` (verified, else no snippet); regex spans are already exact.
+    Only a plain word or phrase keeps the matched words (pattern matches could be anything, so they stay hidden)."""
     if rule.secret:
         return None
     try:
         if rule.kind == "regex":
             return build_snippet(seg.text, a, b, _fold(seg.text[a:b]))
         mapped = map_span(seg.text, seg.norm, a, b)
-        return None if mapped is None else build_snippet(seg.text, mapped[0], mapped[1], seg.norm[a:b])
+        if mapped is None:
+            return None
+        return build_snippet(seg.text, mapped[0], mapped[1], seg.norm[a:b], show_match=rule.kind == "phrase")
     except Exception:  # noqa: BLE001 - evidence is optional; never let it fail the request
         return None
 
@@ -711,7 +745,18 @@ def _bounded(db: Session) -> None:
     db.execute(text("SET LOCAL lock_timeout = '1s'"))
 
 
-def write_blocked_evidence(db: Session, vk: VirtualKey, d: Decision, provider: str, model: str, kind: str) -> None:
+def evidence_capture(vk: VirtualKey, kind: str, body, model: str, hits: list[Hit]) -> content_capture.ContentCapture | None:
+    """The prompt to keep for a request that matched a rule, so the admin can read exactly what was sent. Not for a
+    request a secret/PII detector (card, key, email...) matched: those never keep sensitive text."""
+    if not hits or any(h.rule.secret for h in hits):
+        return None
+    return content_capture.forced(vk.workspace_id, kind, body if isinstance(body, dict) else {}, model)
+
+
+def write_blocked_evidence(
+    db: Session, vk: VirtualKey, d: Decision, provider: str, model: str, kind: str,
+    capture: content_capture.ContentCapture | None = None,
+) -> None:
     """Record a blocked request: one usage row (status 'blocked') plus its hits, in ONE transaction with the ceiling
     counter. Never raises and never changes the outcome: the caller raises the 403 regardless. A single attempt, no
     retry, short statement timeouts; on failure the transaction is rolled back, a content-free line is logged, and the
@@ -734,34 +779,41 @@ def write_blocked_evidence(db: Session, vk: VirtualKey, d: Decision, provider: s
         )
         db.add(row)
         db.flush()
-        db.execute(pg_insert(GuardrailHit).values(_hit_rows(vk, row.id, d.hits)).on_conflict_do_nothing(constraint="uq_guardrail_hit_request_rule"))
+        usage_id = row.id
+        db.execute(pg_insert(GuardrailHit).values(_hit_rows(vk, usage_id, d.hits)).on_conflict_do_nothing(constraint="uq_guardrail_hit_request_rule"))
         _flush_gap(db, ws)
         db.commit()
         _STATS.inc("blocked_recorded")
     except Exception as exc:  # noqa: BLE001 - the block is still enforced by the caller
         _fail_evidence(db, exc, ws, key, kind)
+        return
+    if capture is not None:  # the prompt that was blocked, in its own transaction; it never raises
+        content_capture.store(usage_id, capture, settings.GUARDRAIL_RETENTION_DAYS)
 
 
-def write_flag_evidence(db: Session, vk: VirtualKey, usage_row: UsageLog, guard: GuardResult) -> None:
+def write_flag_evidence(db: Session, vk: VirtualKey, usage_row: UsageLog, guard: GuardResult) -> bool:
     """Record the hits of a flagged request, inside the usage row's own transaction (called from record_usage before
-    its commit) and inside a savepoint: if this fails the usage row still commits, only the hit records are lost."""
+    its commit) and inside a savepoint: if this fails the usage row still commits, only the hit records are lost.
+    True when the hits were written (the caller then also keeps the prompt)."""
     ws, key = vk.workspace_id, vk.id
     if not guard.hits:
-        return
+        return False
     _STATS.inc("flagged")
     if settings.GUARDRAIL_RECORDING_CEILING_PER_HOUR <= 0 or _throttled(ws):
         _STATS.inc("throttled_flagged")
-        return
+        return False
     try:
         with db.begin_nested():
             _bounded(db)
             if not admit(db, ws):
                 _STATS.inc("throttled_flagged")
-                return
+                return False
             db.execute(pg_insert(GuardrailHit).values(_hit_rows(vk, usage_row.id, guard.hits)).on_conflict_do_nothing(constraint="uq_guardrail_hit_request_rule"))
             _flush_gap(db, ws)
+        return True
     except Exception as exc:  # noqa: BLE001 - the usage row must still be written
         _fail_evidence(None, exc, ws, key, "flag")
+        return False
 
 
 def _fail_evidence(db: Session | None, exc: Exception, ws: int, key: int, kind: str) -> None:
@@ -809,10 +861,11 @@ def enforce_guardrails(db: Session, vk: VirtualKey, kind: str, body, provider: s
     for reason in decision.reasons:
         _STATS.inc(f"skipped_{reason}")
         _log("guardrail_skipped", reason, ws, key, kind, None)
+    capture = evidence_capture(vk, kind, body, model, decision.hits)
     if decision.blocked:
-        write_blocked_evidence(db, vk, decision, provider, model, kind)
+        write_blocked_evidence(db, vk, decision, provider, model, kind, capture)
         raise HTTPException(status_code=403, detail={"message": BLOCK_MESSAGE, "type": "guardrail_blocked", "code": "403"})
-    return GuardResult(hits=decision.hits, unchecked=decision.unchecked)
+    return GuardResult(hits=decision.hits, unchecked=decision.unchecked, capture=capture)
 
 
 # ------------------------------------------------------------------------------------------- retention

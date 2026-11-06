@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type GuardrailHit, type RequestRow } from "../../lib/api";
 import { Badge } from "../../components/ui/Badge";
+import { Snippet } from "../workspace/guardrails/Snippet";
 import { Section } from "./content";
 
 const EXPLAIN: Record<NonNullable<RequestRow["guardrail"]>, string> = {
@@ -10,7 +11,8 @@ const EXPLAIN: Record<NonNullable<RequestRow["guardrail"]>, string> = {
 };
 
 /** The request inspector's "Content rules" section: what happened, which rules matched, and the short redacted
- *  context around each match (never the matched text itself). Matches are kept for a limited time, then deleted. */
+ *  context around each match with the matched words highlighted (kept for word/phrase rules only). Matches are kept
+ *  for a limited time, then deleted. */
 export function GuardrailSection({ row }: { row: RequestRow }) {
   const [hits, setHits] = useState<GuardrailHit[] | null>(null);
   const [days, setDays] = useState(30);
@@ -62,7 +64,9 @@ export function GuardrailSection({ row }: { row: RequestRow }) {
                 {h.source_role ? ` · in the ${h.source_role} text` : ""}
               </div>
               {h.snippet ? (
-                <blockquote className="mt-2 break-words rounded bg-surface-2 p-2 font-mono text-xs text-fg">{h.snippet}</blockquote>
+                <blockquote className="mt-2 break-words rounded bg-surface-2 p-2 font-mono text-xs text-fg">
+                  <Snippet snippet={h.snippet} match={h.matched_text} />
+                </blockquote>
               ) : (
                 <p className="mt-2 text-xs text-fg-muted">Context isn't shown for this match (it may contain a secret, or couldn't be located reliably).</p>
               )}
@@ -71,7 +75,11 @@ export function GuardrailSection({ row }: { row: RequestRow }) {
         </ul>
       )}
       {wantsHits && hits && hits.length > 0 && (
-        <p className="mt-3 text-xs text-fg-muted">The matched text is never stored. Matches are deleted after {days} days.</p>
+        <p className="mt-3 text-xs text-fg-muted">
+          Only admins can see this. The prompt of a flagged or blocked request is kept (encrypted) even when prompt
+          logging is off, with credentials masked; a request that matched a card, key or email detector keeps no prompt,
+          and a pattern match is shown as [matched]. Matches and their prompts are deleted after {days} days.
+        </p>
       )}
     </Section>
   );

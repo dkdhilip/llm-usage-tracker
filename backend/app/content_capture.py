@@ -525,12 +525,25 @@ def begin(db: Session, vk: VirtualKey, kind: str, body: dict, *, model: str | No
         return None
 
 
+def forced(workspace_id: int, kind: str, body: dict, model: str | None = None) -> ContentCapture | None:
+    """The request side of a request that a content rule matched, built whatever the logging switches say (a flagged
+    or blocked prompt is kept so an admin can read it). Same whitelist, redaction and size limits as `begin`; never
+    images; never raises. The caller stores it with the guardrail retention (see `store`)."""
+    try:
+        request, truncated, size = build_request(kind, body, model)
+        return ContentCapture(workspace_id, kind, request, truncated, size)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("content capture: forced capture failed (%s)", type(exc).__name__)
+        return None
+
+
 # ------------------------------------------------------------------------------------------- storage
 
 
-def store(usage_log_id: int, capture: ContentCapture) -> bool:
+def store(usage_log_id: int, capture: ContentCapture, retention_days: int | None = None) -> bool:
     """Persist `capture` for an already-committed usage row, in its own session. True if a row was written.
-    Skips (never deletes live content) once the workspace holds CONTENT_MAX_ROWS_PER_WORKSPACE live rows.
+    `retention_days` overrides CONTENT_RETENTION_DAYS (a prompt kept for a content-rule match follows the guardrail
+    retention instead). Skips (never deletes live content) once the workspace holds CONTENT_MAX_ROWS_PER_WORKSPACE live rows.
     Images (only when the workspace opted in separately) are stored after the text record, in their own commit:
     an image problem keeps the text."""
     try:
@@ -586,7 +599,7 @@ def store(usage_log_id: int, capture: ContentCapture) -> bool:
                     response_truncated=capture.response_truncated,
                     request_bytes=capture.request_bytes,
                     response_bytes=capture.response_bytes,
-                    expires_at=func.now() + timedelta(days=settings.CONTENT_RETENTION_DAYS),
+                    expires_at=func.now() + timedelta(days=retention_days or settings.CONTENT_RETENTION_DAYS),
                 )
                 .on_conflict_do_nothing(index_elements=[UsageContent.usage_log_id])
                 .returning(UsageContent.id, UsageContent.expires_at)

@@ -6,6 +6,7 @@ import { Field, Input, Textarea } from "../../../components/ui/Field";
 import { InfoTip } from "../../../components/ui/InfoTip";
 import { InlineAlert } from "../../../components/ui/InlineAlert";
 import { ACTION_HELP, ACTION_LABEL } from "./labels";
+import { Snippet } from "./Snippet";
 
 /** Create or edit one word/phrase rule, with a "Try it" box that runs the same engine the gateway uses on text typed
  *  here (nothing is stored). New rules are always words or phrases (built-in detectors are ticked in their own section
@@ -133,7 +134,12 @@ export function RuleDialog({
                 {tried.matched ? (
                   <>
                     <strong>Matches</strong> ({tried.occurrences} time{tried.occurrences === 1 ? "" : "s"}).
-                    {tried.snippet ? <span className="text-fg-muted"> Context: “{tried.snippet}”</span> : null}
+                    {tried.snippet ? (
+                      <span className="text-fg-muted">
+                        {" "}
+                        Context: “<Snippet snippet={tried.snippet} match={tried.matched_text} />”
+                      </span>
+                    ) : null}
                   </>
                 ) : (
                   <strong>No match.</strong>

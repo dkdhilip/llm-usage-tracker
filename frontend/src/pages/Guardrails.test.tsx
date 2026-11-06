@@ -99,7 +99,7 @@ describe("Guardrails tab", () => {
     expect(within(dialog).getByRole("radio", { name: /Flag/ })).toBeChecked();
     await user.click(within(dialog).getByRole("button", { name: "Add rule" }));
     const consent = await screen.findByRole("alertdialog");
-    expect(within(consent).getByText(/never the matched text itself/)).toBeInTheDocument();
+    expect(within(consent).getByText(/see the word or phrase that matched/)).toBeInTheDocument();
     expect(g.createRule).not.toHaveBeenCalled();
     await user.click(within(consent).getByRole("button", { name: "I understand" }));
     await waitFor(() =>
@@ -178,7 +178,7 @@ describe("Guardrails tab", () => {
   it("tries a rule on sample text without saving anything", async () => {
     const user = userEvent.setup();
     g.ruleSets.mockResolvedValue(sets([set()]));
-    g.test.mockResolvedValue({ matched: true, occurrences: 2, snippet: "the [matched] plan", unchecked: false });
+    g.test.mockResolvedValue({ matched: true, occurrences: 2, snippet: "the [matched] plan", matched_text: "bluefalcon", unchecked: false });
     open();
     await user.click(await screen.findByRole("button", { name: /Add rule to No secrets/ }));
     const dialog = await screen.findByRole("dialog", { name: "Add a rule" });
@@ -188,7 +188,9 @@ describe("Guardrails tab", () => {
     await user.type(within(dialog).getByLabelText("Try it"), "the bluefalcon plan");
     await user.click(within(dialog).getByRole("button", { name: "Try it" }));
     expect(await within(dialog).findByText(/Matches/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/the \[matched\] plan/)).toBeInTheDocument();
+    const shown = within(dialog).getByText("bluefalcon"); // the matched words are highlighted inside their context
+    expect(shown.tagName).toBe("MARK");
+    expect(shown.parentElement).toHaveTextContent("Context: “the bluefalcon plan”");
     expect(g.createRule).not.toHaveBeenCalled();
     expect(g.test).toHaveBeenCalledWith({ kind: "phrase", pattern: "bluefalcon", preset_id: null, whole_word: false, text: "the bluefalcon plan" });
   });

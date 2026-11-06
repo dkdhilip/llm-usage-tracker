@@ -542,6 +542,8 @@ export interface GuardrailHit {
   source_role: string | null;
   occurrences: number;
   snippet: string | null;
+  /** the words that matched, as written (word/phrase rules only); the snippet has [matched] in their place */
+  matched_text?: string | null;
   snippet_available: boolean;
   reviewed: boolean;
 }
@@ -550,6 +552,7 @@ export interface GuardrailTestResult {
   matched: boolean;
   occurrences: number;
   snippet: string | null;
+  matched_text?: string | null;
   unchecked: boolean;
 }
 

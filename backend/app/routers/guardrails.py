@@ -356,9 +356,10 @@ def dry_run(body: TestIn, response: Response, m: Membership = Depends(require_wo
     segs, _ = g.extract_segments({"messages": [{"role": "user", "content": body.text}]})
     d = g.evaluate(segs, [rule])
     hit = d.hits[0] if d.hits else None
+    snippet, matched_text = g.split_snippet(hit.snippet if hit else None)
     return {
         "matched": hit is not None, "occurrences": hit.occurrences if hit else 0,
-        "snippet": hit.snippet if hit else None, "unchecked": d.unchecked, "elapsed_ms": d.elapsed_ms,
+        "snippet": snippet, "matched_text": matched_text, "unchecked": d.unchecked, "elapsed_ms": d.elapsed_ms,
     }
 
 
@@ -420,7 +421,8 @@ def list_hits(
     db: Session = Depends(get_db), m: Membership = Depends(require_workspace_admin),
 ) -> dict:
     """The individual hits behind a group (or one request), newest first, with the decrypted snippet. The snippet is
-    short, redacted request context: read access is logged (who, never what) and the response is never cached."""
+    short, redacted request context, and for a word or phrase rule the matched words too (`matched_text`; the snippet
+    keeps [matched] where they were): read access is logged (who, never what) and the response is never cached."""
     response.headers["Cache-Control"] = "no-store"
     limit = max(1, min(limit, 200))
     stmt = (
@@ -450,12 +452,13 @@ def list_hits(
                 snippet = crypto.decrypt(h.snippet_enc)
             except Exception:  # noqa: BLE001 - e.g. ENCRYPTION_KEY changed: show "unavailable", never fail the list
                 snippet = None
+        snippet, matched_text = g.split_snippet(snippet)
         items.append({
             "id": h.id, "ts": h.ts.isoformat(), "usage_id": h.usage_log_id, "request_id": rid, "key_id": h.key_id,
             "key_label": label, "provider": provider, "model": model, "request_status": status, "rule_id": h.rule_id,
             "rule_name": h.rule_name, "rule_set_name": h.rule_set_name, "rule_kind": h.rule_kind, "action": h.action,
             "source_role": h.source_role, "occurrences": h.occurrences, "snippet": snippet,
-            "snippet_available": snippet is not None, "reviewed": h.reviewed_at is not None,
+            "matched_text": matched_text, "snippet_available": snippet is not None, "reviewed": h.reviewed_at is not None,
         })
     if items:
         logger.info("guardrail hits read: user=%s count=%s", m.user_id, len(items))  # who looked; never the snippets

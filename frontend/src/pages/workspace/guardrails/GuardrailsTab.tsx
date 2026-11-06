@@ -70,7 +70,9 @@ export function GuardrailsTab({ keys, onChange }: { keys: KeyRow[]; onChange: ()
         <>
           <p>
             Content rules read the text of requests sent with the keys they are attached to. When a rule matches, you can
-            see a short, redacted piece of the surrounding text (never the matched text itself) for {status?.retention_days ?? 30} days.
+            see the word or phrase that matched and the whole prompt that was flagged or blocked, for{" "}
+            {status?.retention_days ?? 30} days, even if prompt logging is off. Credentials in the prompt are masked, and a request
+            that matched a card, key or email detector keeps no prompt.
           </p>
           <p className="mt-2">Tell your team that requests may be checked. This is a policy aid, not a security boundary.</p>
         </>
