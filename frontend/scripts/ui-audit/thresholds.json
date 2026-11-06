@@ -33,6 +33,8 @@
     "playgroundFlow",
     "playgroundAccessible",
     "textSpacingAndResize",
+    "gettingStartedNoFlash",
+    "gettingStartedSection",
     "confirmDialogTrapAndReturn",
     "noNativeConfirmDialogs",
     "dashboardErrorAnnounced",

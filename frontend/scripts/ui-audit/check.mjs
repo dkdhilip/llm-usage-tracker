@@ -414,6 +414,46 @@ await check("textSpacingAndResize", async () => {
   return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${Object.keys(out).length} views: no sideways scroll, nothing clipped` };
 });
 
+await check("gettingStartedNoFlash", async () => {
+  // the setup section must not show a verdict ("0 of 3 done", "No keys yet") before the workspace and keys have loaded
+  const ctx = await context("auditadmin", 1440); const page = await ctx.newPage();
+  await page.route(/\/api\/(workspace|keys)(\?|$)/, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+  await page.goto("/workspace");
+  const seen = { early: [], loadingShown: false };
+  const t0 = Date.now();
+  while (Date.now() - t0 < 1100) {
+    const s = await page.evaluate(() => ({ guide: !!document.querySelector("button[aria-expanded][aria-controls]") && /Getting started/.test(document.body.innerText), steps: /steps done/.test(document.body.innerText), none: /No keys yet/.test(document.body.innerText), zero: /\b0 active\b/.test(document.body.innerText), skeleton: !!document.querySelector(".animate-pulse") }));
+    if (s.guide || s.steps || s.none || s.zero) seen.early.push(s);
+    if (s.skeleton) seen.loadingShown = true;
+    await page.waitForTimeout(50);
+  }
+  await page.getByRole("button", { name: /^Getting started/ }).waitFor({ timeout: 8000 });
+  const settled = await page.evaluate(() => { const b = [...document.querySelectorAll("section h2 > button[aria-expanded]")].find((x) => /^Getting started/.test(x.textContent)); return { name: (b?.textContent || "").replace(/\s+/g, " ").trim(), expanded: b?.getAttribute("aria-expanded") }; });
+  await ctx.close();
+  const pass = seen.early.length === 0 && seen.loadingShown && /3 of 3 steps done/.test(settled.name) && settled.expanded === "false";
+  return { pass, detail: JSON.stringify({ verdictBeforeData: seen.early.length, loadingPlaceholderShown: seen.loadingShown, afterLoad: settled }) };
+});
+
+await check("gettingStartedSection", async () => {
+  // open and closed, light and dark: the toggle works from the keyboard, is named, and passes axe
+  const out = {};
+  for (const theme of ["light", "dark"]) {
+    const ctx = await context("auditadmin", 1440, theme); const page = await ctx.newPage(); await load(page, "/workspace", "text=Virtual keys");
+    const btn = page.getByRole("button", { name: /^Getting started/ }); await btn.focus();
+    const closed = await btn.getAttribute("aria-expanded"); const vClosed = await axeRun(page);
+    await page.keyboard.press("Enter"); await page.waitForTimeout(150);
+    const opened = await btn.getAttribute("aria-expanded"); const stepsShown = await page.getByText("Point your app at the gateway").first().isVisible();
+    if (SHOTS) await page.screenshot({ path: join(OUT, "shots", `getting-started-open-${theme}.png`) });
+    const vOpen = await axeRun(page); const m = await page.evaluate(MEASURE);
+    await page.reload(); await page.getByRole("button", { name: /^Getting started/ }).waitFor();
+    const remembered = await page.getByRole("button", { name: /^Getting started/ }).getAttribute("aria-expanded");
+    out[theme] = { closed, opened, stepsShown, remembered, axe: vClosed.reduce((a, x) => a + x.n, 0) + vOpen.reduce((a, x) => a + x.n, 0), small: m.small, unnamed: m.unnamed };
+    await ctx.close();
+  }
+  const bad = Object.values(out).filter((v) => v.closed !== "false" || v.opened !== "true" || !v.stepsShown || v.remembered !== "true" || v.axe || v.small || v.unnamed);
+  return { pass: bad.length === 0, detail: JSON.stringify(out) };
+});
+
 await check("noNativeConfirmDialogs", async () => {
   const ctx = await context("auditadmin", 1440); const page = await ctx.newPage(); const seen = [];
   page.on("dialog", async (d) => { seen.push(d.message().slice(0, 40)); await d.dismiss(); });
