@@ -226,6 +226,7 @@ def test_dry_run_matches_like_the_gateway_and_stores_nothing(admin_client):
     r = admin_client.post("/api/guardrails/test", json={"kind": "phrase", "pattern": "BlueFalcon", "text": "the bluefalcon plan"})
     j = r.json()
     assert r.status_code == 200 and j["matched"] and j["occurrences"] == 1 and "[matched]" in j["snippet"]
+    assert j["matched_text"] == "bluefalcon" and "bluefalcon" not in j["snippet"]
     assert r.headers["cache-control"] == "no-store"
     assert not admin_client.post("/api/guardrails/test", json={"kind": "phrase", "pattern": "zzz", "text": "nothing"}).json()["matched"]
     assert admin_client.post("/api/guardrails/test", json={"kind": "regex", "pattern": "(a|aa)+$", "text": "a"}).status_code == 422
@@ -282,13 +283,14 @@ def test_group_level_review_touches_only_that_group(on, setup, client, mock_prov
     assert [gp["rule_name"] for gp in c.get("/api/guardrails/hits", params={"unread_only": True}).json()["items"]] == ["project"]
 
 
-def test_hit_items_show_decrypted_redacted_snippets_never_the_match_and_are_not_cached(on, setup, client, mock_provider):
+def test_hit_items_show_decrypted_redacted_snippets_with_the_matched_words_and_are_not_cached(on, setup, client, mock_provider):
     c, key = setup
     _generate(c, key, client, n_block=1, n_flag=0)
     r = c.get("/api/guardrails/hits/items")
     assert r.headers["cache-control"] == "no-store"
     item = r.json()["items"][0]
     assert item["action"] == "block" and item["snippet"] and "[matched]" in item["snippet"] and "bluefalcon" not in item["snippet"].lower()
+    assert item["matched_text"] == "bluefalcon"  # a word rule: the words as written, apart from the context
     assert item["key_label"] == key["label"] and item["request_status"] == "blocked"
     assert set(item) >= {"usage_id", "request_id", "rule_name", "rule_set_name", "occurrences", "source_role"}
 

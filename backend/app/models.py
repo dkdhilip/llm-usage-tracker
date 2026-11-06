@@ -522,8 +522,9 @@ class KeyGuardrailSet(Base):
 
 class GuardrailHit(Base):
     """A rule that matched one request. Doubles as the admin's notification (unread = reviewed_at IS NULL).
-    Names are snapshots (the rule may later be edited or deleted). The matched text is NEVER stored; the snippet is a
-    short redacted context, encrypted, and may be absent. The whole row is deleted once expires_at passes."""
+    Names are snapshots (the rule may later be edited or deleted). The snippet is a short redacted context, encrypted,
+    and may be absent; only for a plain word/phrase rule does it also hold the matched words. The whole row is deleted
+    once expires_at passes."""
 
     __tablename__ = "guardrail_hits"
 

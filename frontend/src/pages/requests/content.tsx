@@ -141,10 +141,13 @@ export function StoredContentSections({
   content,
   error,
   usageId,
+  requestOnly,
 }: {
   content: RequestContent | null;
   error: string | null;
   usageId: number;
+  /** a blocked request never reached the provider: there is no response to show */
+  requestOnly?: boolean;
 }) {
   if (error)
     return (
@@ -170,7 +173,7 @@ export function StoredContentSections({
     );
   const { response } = content.content;
   const parts = promptParts(content);
-  const reply = responseText(content) || "—";
+  const reply = responseText(content);
   return (
     <>
       {parts.length > 0 && (
@@ -186,22 +189,32 @@ export function StoredContentSections({
         </Section>
       )}
       <ImagesSection usageId={usageId} content={content} />
-      <Section title="Response" action={<CopyButton label="Copy response" what="Response" text={responseText(content)} />}>
-        <TextBlock label="Response" text={reply} />
-        {response.text && response.summary && (
-          <div className="mt-3">
-            <div className="mb-1 text-xs font-medium text-fg-muted">Response summary</div>
-            <TextBlock label="Response summary" text={response.summary} />
-          </div>
-        )}
-        {(content.request_truncated || content.response_truncated) && (
-          <p className="mt-3 text-xs text-warning-fg">
-            Truncated:{" "}
-            {[content.request_truncated && "request", content.response_truncated && "response"].filter(Boolean).join(" and ")}{" "}
-            exceeded the storage limit.
-          </p>
-        )}
-      </Section>
+      {requestOnly ? (
+        content.request_truncated && (
+          <p className="px-5 pb-4 text-xs text-warning-fg">Truncated: the request exceeded the storage limit.</p>
+        )
+      ) : (
+        <Section title="Response" action={<CopyButton label="Copy response" what="Response" text={responseText(content)} />}>
+          {reply ? (
+            <TextBlock label="Response" text={reply} />
+          ) : (
+            <p className="text-sm text-fg-muted">No response was stored. (Prompt logging is off, so only the prompt of a request a content rule matched is kept.)</p>
+          )}
+          {response.text && response.summary && (
+            <div className="mt-3">
+              <div className="mb-1 text-xs font-medium text-fg-muted">Response summary</div>
+              <TextBlock label="Response summary" text={response.summary} />
+            </div>
+          )}
+          {(content.request_truncated || content.response_truncated) && (
+            <p className="mt-3 text-xs text-warning-fg">
+              Truncated:{" "}
+              {[content.request_truncated && "request", content.response_truncated && "response"].filter(Boolean).join(" and ")}{" "}
+              exceeded the storage limit.
+            </p>
+          )}
+        </Section>
+      )}
     </>
   );
 }

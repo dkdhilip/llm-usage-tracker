@@ -169,7 +169,7 @@ UNICODE_CASES = [
 
 
 @pytest.mark.parametrize("original,needle", UNICODE_CASES)
-def test_snippets_are_either_verified_or_absent_and_never_contain_the_match(original, needle):
+def test_snippets_are_either_verified_or_absent_and_keep_the_matched_words_apart_from_the_context(original, needle):
     try:
         original.encode("utf-8")
     except UnicodeEncodeError:
@@ -177,9 +177,10 @@ def test_snippets_are_either_verified_or_absent_and_never_contain_the_match(orig
     d = ev(user(f"{original} and some more text"), rule(1, "phrase", needle, "flag"))
     for h in d.hits:
         if h.snippet is not None:
-            assert "[matched]" in h.snippet and len(h.snippet) <= 120
-            assert g._fold(needle) not in g._fold(h.snippet.replace("[matched]", " "))
-            assert not any(ord(c) < 32 for c in h.snippet)
+            context, match = g.split_snippet(h.snippet)
+            assert "[matched]" in context and len(context) <= 120
+            assert match and len(match) <= 60 and g._fold(match) == g._fold(needle)  # the words as they were written
+            assert not any(ord(c) < 32 for c in context + match)
 
 
 def test_mapped_spans_land_on_cluster_boundaries_and_refold_to_the_match():
@@ -207,26 +208,42 @@ def test_secret_presets_store_no_snippet_and_context_is_masked():
     assert d.hits[0].snippet is None
     d = ev(user("password: hunter2 token abcdefghijklmnopqrstuvwxyz0123 id 1234567890123 then bluefalcon end"),
            rule(2, "phrase", "bluefalcon", "flag"))
-    snip = d.hits[0].snippet
+    snip, match = g.split_snippet(d.hits[0].snippet)
     assert snip and "abcdefghijklmnopqrstuvwxyz0123" not in snip and "1234567890123" not in snip and "[matched]" in snip
+    assert match == "bluefalcon"
 
 
-def test_a_repeated_word_next_to_the_match_means_no_snippet():
-    d = ev(user("bluefalcon bluefalcon"), rule(1, "phrase", "bluefalcon", "flag"))
+def test_a_word_rule_keeps_the_matched_words_as_written_even_when_repeated_next_to_it():
+    d = ev(user("Please keep BlueFalcon bluefalcon quiet"), rule(1, "phrase", "bluefalcon", "flag"))
+    context, match = g.split_snippet(d.hits[0].snippet)
+    assert match == "BlueFalcon" and context.startswith("Please keep [matched]") and "[matched]" in context
+
+
+def test_a_matched_word_is_cleaned_like_the_context_and_cut_short():
+    d = ev(user("x 4111111111111111 y"), rule(1, "phrase", "4111111111111111", "flag"))
+    assert g.split_snippet(d.hits[0].snippet)[1] == "[digits]"  # long digit runs are masked even when they are the match
+    d = ev(user("a " + "word " * 40 + "end"), rule(1, "phrase", "word " * 40, "flag"))
+    assert len(g.split_snippet(d.hits[0].snippet)[1]) == 60
+
+
+def test_a_pattern_rule_still_hides_the_matched_text_and_a_repeated_word_means_no_snippet():
+    d = ev(user("bluefalcon bluefalcon"), rule(1, "regex", "bluefalcon", "flag"))
     assert d.hits[0].snippet is None
+    d = ev(user("please keep bluefalcon quiet"), rule(1, "regex", "bluefalcon", "flag"))
+    assert g.split_snippet(d.hits[0].snippet) == ("please keep [matched] quiet", None)
 
 
 # ------------------------------------------------------ evidence: what is stored, and how it is stored
 
 
-def test_stored_snippet_is_encrypted_and_the_match_is_never_stored(on, client, make_live_key, mock_provider):
+def test_stored_snippet_is_encrypted_and_holds_the_matched_words_only_for_a_word_rule(on, client, make_live_key, mock_provider):
     key = make_live_key(allowed_providers=ALL)
     install(key["id"], ("phrase", "bluefalcon", "flag"))
     assert call(client, key["key"], "messages", "please keep the bluefalcon plan quiet").status_code == 200
     h = hits()[0]
-    assert h.snippet_enc and "bluefalcon" not in h.snippet_enc and "plan" not in h.snippet_enc
-    plain = crypto.decrypt(h.snippet_enc)
-    assert "[matched]" in plain and "bluefalcon" not in plain
+    assert h.snippet_enc and "bluefalcon" not in h.snippet_enc and "plan" not in h.snippet_enc  # ciphertext only
+    context, match = g.split_snippet(crypto.decrypt(h.snippet_enc))
+    assert match == "bluefalcon" and "bluefalcon" not in context and "[matched]" in context
     row = usage()[0]
     assert "bluefalcon" not in (row.prompt_preview or "") or settings.LOG_BODIES  # unchanged behaviour
 

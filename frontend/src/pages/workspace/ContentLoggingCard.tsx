@@ -76,6 +76,10 @@ export function ContentLoggingCard({ ws, onChange }: { ws: WorkspaceDetail; onCh
           vectors and credentials are never stored) and visible only to workspace admins. Each record is deleted
           automatically after {state.retention_days} days. Usage analytics are not affected.
         </p>
+        <p className="text-sm text-fg-muted" data-testid="rules-exception">
+          One exception, whatever this switch says: when a content rule flags or blocks a request, its prompt is kept
+          (encrypted, admins only) for up to 30 days so you can read exactly what was sent.
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={state.enabled ? "success" : "neutral"} dot>
             {state.enabled ? "On" : "Off"}

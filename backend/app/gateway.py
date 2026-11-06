@@ -794,15 +794,19 @@ def record_usage(
     )
     db.add(row)
     vk.last_used_at = datetime.now(UTC)
+    kept = False  # a content rule matched and its hits were recorded: the prompt is kept too
     if guard is not None and guard.hits:
         db.flush()  # the hits point at this row; they commit with it, in a savepoint (a failure drops only them)
-        guardrails.write_flag_evidence(db, vk, row, guard)
+        kept = guardrails.write_flag_evidence(db, vk, row, guard)
     db.commit()
     db.refresh(row)
-    if capture is not None:
+    # A request a rule flagged keeps its prompt for as long as the hit, even when prompt logging is off (that copy has
+    # no response); with logging on, the normal record (prompt and response) just follows the same retention.
+    stored = capture if capture is not None else (guard.capture if kept and guard is not None else None)
+    if stored is not None:
         # AFTER the usage row is committed, in its own session/transaction, and it never raises: a content
         # problem cannot affect the request, the usage row, or any analytics.
-        content_capture.store(row.id, capture)
+        content_capture.store(row.id, stored, settings.GUARDRAIL_RETENTION_DAYS if kept else None)
     return row
 
 

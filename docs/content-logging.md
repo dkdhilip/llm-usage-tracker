@@ -15,6 +15,9 @@ latency, status) are unchanged whether it is on or off.
   vectors, provider error text. Credential-shaped strings (`sk-…`, `vk_…`, `Bearer …`, `AIza…`, JWTs,
   `password=…`, …) are replaced by `[REDACTED:…]`. Redaction is best-effort, **not** PII scrubbing.
 - **Limits:** per-field and per-side size caps (flagged `truncated`), a per-workspace row cap.
+- **One exception to the switches:** a request that a content rule ([guardrails](guardrails.md)) flags or blocks keeps
+  its prompt for admins even when logging is off, for the guardrail retention (up to 30 days). See
+  [the prompt that was flagged or blocked](guardrails.md#the-prompt-that-was-flagged-or-blocked).
 - **Who can read it:** workspace admins only, one request at a time (`GET /api/requests/{id}/content`);
   list endpoints never return content.
 - **Retention:** 30 days maximum, enforced on read (expired content is never returned) and physically

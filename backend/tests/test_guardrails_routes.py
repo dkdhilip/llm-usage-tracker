@@ -2,7 +2,9 @@
 
 S1 block / S2 flag / S3 block+flag / S4 no sets / S5-S6 idempotency / S7 streaming / S8 content capture / drift guards."""
 import ast
+import json
 import pathlib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select, text
@@ -34,6 +36,12 @@ def _drain(r):
     return r.text  # consume a streamed body
 
 
+def kept():
+    """Every stored prompt record as (row, decrypted payload)."""
+    with SessionLocal() as db:
+        return [(r, content_capture.load(r)) for r in db.scalars(select(UsageContent).order_by(UsageContent.id))]
+
+
 # ---------------------------------------------------------------------------------------- S1 block
 
 
@@ -57,8 +65,11 @@ def test_block_returns_403_before_any_provider_call_and_leaves_no_state(route, o
     assert hs[0].expires_at is not None
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0  # nothing claimed
-        assert db.scalar(select(func.count()).select_from(UsageContent)) == 0  # a blocked prompt is never captured
         assert db.get(VirtualKey, key["id"]).last_used_at == last_used  # not counted as use
+    # the prompt that was blocked is kept for the admin (request side only), although logging is off on this key
+    ((row, payload),) = kept()
+    assert row.usage_log_id == rows[0].id and "bluefalcon" in json.dumps(payload["request"])
+    assert payload["response"] == {"text": "", "summary": ""}
 
 
 # ----------------------------------------------------------------------------------------- S2 flag
@@ -75,6 +86,9 @@ def test_flag_lets_the_request_through_and_records_a_hit(route, on, client, key,
     assert len(rows) == 1 and rows[0].status == "success" and rows[0].guardrail == "flagged"
     hs = hits()
     assert len(hs) == 1 and hs[0].action == "flag" and hs[0].usage_log_id == rows[0].id
+    # logging is off on this key, yet the flagged prompt is kept (without a response) so the admin can read it
+    ((row, payload),) = kept()
+    assert row.usage_log_id == rows[0].id and "bluefalcon" in json.dumps(payload["request"])
 
 
 # ------------------------------------------------------------------------------- S3 block and flag
@@ -175,18 +189,78 @@ def test_a_blocked_stream_is_a_plain_json_403_not_an_sse_error(route, on, client
 # ------------------------------------------------------------------------------ S8 content capture
 
 
-def test_blocked_prompt_is_not_captured_but_flagged_is(on, client, make_live_key, spies, admin_client):
+def test_with_logging_on_a_flagged_request_keeps_its_response_and_follows_the_guardrail_retention(on, client, make_live_key, spies, admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "CONTENT_RETENTION_DAYS", 7)
     assert admin_client.patch("/api/workspace/content-logging", json={"enabled": True}).status_code == 200
     key = make_live_key(allowed_providers=ALL, content_logging_enabled=True)
-    install(key["id"], ("phrase", "bluefalcon", "block"), ("phrase", "launch", "flag"))
+    install(key["id"], ("phrase", "launch", "flag"))
+    assert call(client, key["key"], "messages", "the launch is soon").status_code == 200
+    ((row, payload),) = kept()
+    assert payload["response"]["text"]  # the normal record: prompt AND response
+    assert row.expires_at > datetime.now(UTC) + timedelta(days=settings.GUARDRAIL_RETENTION_DAYS - 1)  # not the shorter 7 days
+    plain = make_live_key(allowed_providers=ALL, content_logging_enabled=True)
+    assert call(client, plain["key"], "messages", "an ordinary question").status_code == 200
+    assert len(kept()) == 2 and kept()[1][0].expires_at < datetime.now(UTC) + timedelta(days=8)  # unflagged: unchanged
+
+
+def test_the_admin_reads_a_blocked_prompt_from_the_request_inspector_endpoint(on, client, make_live_key, spies, admin_client):
+    key = make_live_key(allowed_providers=ALL)  # logging is off for the workspace and the key
+    install(key["id"], RULE_BLOCK)
     assert call(client, key["key"], "messages", TRIGGER).status_code == 403
-    with SessionLocal() as db:
+    uid = usage()[0].id
+    r = admin_client.get(f"/api/requests/{uid}/content")
+    j = r.json()
+    assert r.status_code == 200 and j["content_status"] == "available" and r.headers["cache-control"] == "no-store"
+    assert TRIGGER in json.dumps(j["content"]["request"])
+    assert [x for x in admin_client.get("/api/requests").json()["items"] if x["id"] == uid][0]["has_content"] is True
+
+
+def test_a_kept_prompt_follows_the_guardrail_retention_and_goes_with_the_blocked_row(on, client, make_live_key, spies, monkeypatch):
+    monkeypatch.setattr(settings, "CONTENT_RETENTION_DAYS", 7)  # a shorter content-logging retention must not shorten it
+    key = make_live_key(allowed_providers=ALL)
+    install(key["id"], RULE_BLOCK)
+    assert call(client, key["key"], "messages", TRIGGER).status_code == 403
+    ((row, _),) = kept()
+    assert row.expires_at > datetime.now(UTC) + timedelta(days=settings.GUARDRAIL_RETENTION_DAYS - 1)
+    with SessionLocal() as db:  # the blocked usage row is deleted by the guardrail sweep: the prompt cascades with it
+        from app.models import UsageLog
+
+        db.query(UsageLog).delete()
+        db.commit()
         assert db.scalar(select(func.count()).select_from(UsageContent)) == 0
-    key2 = make_live_key(allowed_providers=ALL, content_logging_enabled=True)
-    install(key2["id"], ("phrase", "launch", "flag"), set_name="Only flag")
-    assert call(client, key2["key"], "messages", "the launch is soon").status_code == 200
-    with SessionLocal() as db:
-        assert db.scalar(select(func.count()).select_from(UsageContent)) == 1
+
+
+def test_a_credential_in_a_kept_prompt_is_redacted_like_any_stored_prompt(on, client, make_live_key, spies):
+    key = make_live_key(allowed_providers=ALL)
+    install(key["id"], RULE_BLOCK)
+    assert call(client, key["key"], "messages", TRIGGER + " key sk-abcdefghijklmnopqrstuvwxyz0123").status_code == 403
+    ((_, payload),) = kept()
+    text = json.dumps(payload["request"])
+    assert "sk-abcdefghijklmnopqrstuvwxyz0123" not in text and "[REDACTED:openai-key]" in text and "bluefalcon" in text
+
+
+@pytest.mark.parametrize("action,status", [("block", 403), ("flag", 200)])
+def test_a_secret_detector_match_never_keeps_the_prompt(action, status, on, client, make_live_key, spies):
+    key = make_live_key(allowed_providers=ALL)
+    install(key["id"], ("preset", "card", action))
+    r = call(client, key["key"], "messages", "charge 4111 1111 1111 1111 please")
+    assert r.status_code == status and len(hits()) == 1
+    assert kept() == []  # the card number is nowhere in storage
+
+
+def test_a_card_match_next_to_a_word_match_keeps_nothing_forced(on, client, make_live_key, spies):
+    key = make_live_key(allowed_providers=ALL)
+    install(key["id"], ("preset", "card", "flag"), ("phrase", "bluefalcon", "flag"))
+    assert call(client, key["key"], "messages", "bluefalcon card 4111 1111 1111 1111").status_code == 200
+    assert kept() == []  # the prompt holds a card number, so it is not kept on the rules' account
+
+
+def test_no_prompt_is_kept_once_the_recording_ceiling_is_reached_but_blocking_continues(on, client, make_live_key, spies, monkeypatch):
+    monkeypatch.setattr(settings, "GUARDRAIL_RECORDING_CEILING_PER_HOUR", 0)
+    key = make_live_key(allowed_providers=ALL)
+    install(key["id"], RULE_BLOCK)
+    assert call(client, key["key"], "messages", TRIGGER).status_code == 403 and spies == []
+    assert kept() == [] and hits() == []
 
 
 # --------------------------------------------------------------------------- tenancy and edges

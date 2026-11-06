@@ -30,7 +30,8 @@ auth -> parse/ACL -> idempotency.begin (read-only) -> quota -> budget -> workspa
 All 12 gateway handlers (17 request shapes incl. streaming variants) call `enforce_guardrails` after governance and
 before anything is claimed, captured or sent (a test parses each handler and fails if the order drifts). Consequences:
 
-- a block leaves **no** idempotency record, no captured content and no provider call; a streaming request that is
+- a block leaves **no** idempotency record and no provider call (its prompt is kept for the admin, see
+  [The prompt that was flagged or blocked](#the-prompt-that-was-flagged-or-blocked)); a streaming request that is
   blocked gets a plain JSON `403`, never an SSE error;
 - an idempotent **replay is never re-evaluated** (the stored response is returned; rule changes apply to new
   executions only); a blocked request retried with the same key is evaluated again;
@@ -62,10 +63,38 @@ request is **still blocked**; the failure is counted and logged, and becomes a p
 `guardrail.evidence_gap` after the next successful write. A flagged request writes its hits in a savepoint inside its
 normal usage row's transaction.
 
-The matched text is never stored. The snippet is up to 20 characters of context each side with the match replaced by
-`[matched]`, redacted (`content_capture.redact`, long digit runs and long tokens masked), at most 120 characters and
-encrypted. It is omitted whenever it cannot be built reliably (offsets are verified by re-normalising the mapped span),
-for secret/PII presets, and when the matched text appears in its own context.
+The evidence is a snippet: up to 20 characters of context each side of the match, redacted
+(`content_capture.redact`, long digit runs and long tokens masked), at most 50 characters each side, and encrypted.
+It is omitted whenever it cannot be built reliably (offsets are verified by re-normalising the mapped span) and for
+secret/PII presets.
+
+For a **word or phrase** rule the snippet also keeps the matched words as they were written (cleaned the same way,
+at most 60 characters, between two control-character markers inside the encrypted value). They tell the admin nothing
+the rule's own text did not already, and the Requests inspector and the rule's "Try it" box highlight them in their
+context. The API returns the context with `[matched]` in place of the words and the words apart as `matched_text`.
+**Pattern (regex) rules and the secret/PII detectors never keep the matched text**: their snippet shows `[matched]`
+(none at all for a detector, or when the matched text also appears in its own context). Hits saved before this change
+keep showing `[matched]`.
+
+### The prompt that was flagged or blocked
+
+When a rule flags or blocks a request, the admin can read **the exact prompt** in the Requests inspector, **whatever
+the prompt-logging switches say** (workspace and key). It is the same encrypted `usage_content` record that prompt
+logging writes (same whitelist per request type, same size limits and `truncated` flag, credential-shaped strings
+replaced by `[REDACTED:...]`, never images), with two differences:
+
+- it holds the **request side only** when logging is off (a blocked request never reached the provider, so it has no
+  response; a flagged one is stored without its response). With logging on, the normal record (prompt and response) is
+  stored as usual;
+- it expires with the hit, after `GUARDRAIL_RETENTION_DAYS` (30), not `CONTENT_RETENTION_DAYS`. This also applies to the
+  normal record of a request a rule matched, so a shorter content retention never cuts a matched prompt short. A blocked
+  request's prompt is deleted with its usage row by the guardrail sweep; a flagged request's by the usual content sweep.
+
+It is written only when the hit itself was recorded, so it follows the same hourly recording ceiling, and it is stored
+in its own transaction after the decision, so it can never change a block or fail a request. **A request that matched a
+secret/PII detector (card, key, email) keeps no prompt**, so those detectors still never store the sensitive text.
+"Delete stored content" on the workspace's logging card removes these prompts too. The workspace's logging card and the
+"before you add the first rule" notice say so, because it overrides a logging switch that was turned off.
 
 **Recording ceiling**: `GUARDRAIL_RECORDING_CEILING_PER_HOUR` (1000) evidence records per workspace per clock hour, one
 atomic upsert, exact under any concurrency. Past it, blocking continues and, after the first refusal, a process does no

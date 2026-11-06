@@ -119,7 +119,9 @@ export function RequestInspector({
   const body = (
     <>
       {row.guardrail && <GuardrailSection row={row} />}
-      {row.has_content && <StoredContentSections content={content} error={contentError} usageId={row.id} />}
+      {row.has_content && (
+        <StoredContentSections content={content} error={contentError} usageId={row.id} requestOnly={row.status === "blocked"} />
+      )}
       {/* The old LOG_BODIES previews: only shown when one actually exists (the flag is off in production). */}
       {(row.prompt_preview != null || row.response_preview != null) && (
         <Section title="Previews">
