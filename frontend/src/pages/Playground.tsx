@@ -233,7 +233,7 @@ export function Playground() {
             >
               {busy ? "Sending…" : "Send request"}
               {!busy && (
-                <span aria-hidden="true" className="ml-1.5 text-xs font-normal opacity-85">
+                <span aria-hidden="true" className="ml-1.5 text-xs font-normal">
                   {isMac ? "⌘ ↵" : "Ctrl ↵"}
                 </span>
               )}

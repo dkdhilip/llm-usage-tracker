@@ -7,6 +7,19 @@ import { providerName } from "../../lib/format";
 const FIELD =
   "h-8 rounded-md border border-control bg-surface px-2.5 text-sm text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text";
 
+const STATUS_OPTIONS = [
+  { value: "success", label: "Success" },
+  { value: "error", label: "Error" },
+  { value: "blocked", label: "Blocked" },
+];
+
+const RULE_OPTIONS = [
+  { value: "any", label: "Matched a rule" },
+  { value: "blocked", label: "Blocked by a rule" },
+  { value: "flagged", label: "Flagged by a rule" },
+  { value: "unchecked", label: "Not fully checked" },
+];
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
@@ -36,24 +49,24 @@ export function RequestFilters({
   return (
     <div role="group" aria-label="Filters" className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-3 shadow-sm">
       <Field label="Key">
-        <select className={FIELD} value={get("key_id")} onChange={(e) => set("key_id", e.target.value)}>
-          <option value="">All keys</option>
-          {keys.map((k) => (
-            <option key={k.id} value={k.id}>
-              {k.label}
-            </option>
-          ))}
-        </select>
+        <Combobox
+          label="Key"
+          value={get("key_id")}
+          onChange={(v) => set("key_id", v)}
+          options={keys.map((k) => ({ value: String(k.id), label: k.label }))}
+          allLabel="All keys"
+          searchPlaceholder="Search keys…"
+        />
       </Field>
       <Field label="Provider">
-        <select className={FIELD} value={get("provider")} onChange={(e) => set("provider", e.target.value)}>
-          <option value="">All</option>
-          {PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {providerName(p)}
-            </option>
-          ))}
-        </select>
+        <Combobox
+          label="Provider"
+          value={get("provider")}
+          onChange={(v) => set("provider", v)}
+          options={PROVIDERS.map((p) => ({ value: p, label: providerName(p) }))}
+          allLabel="All providers"
+          searchable={false}
+        />
       </Field>
       <Field label="Model">
         <Combobox
@@ -66,28 +79,34 @@ export function RequestFilters({
         />
       </Field>
       <Field label="Status">
-        <select className={FIELD} value={get("status")} onChange={(e) => set("status", e.target.value)}>
-          <option value="">All</option>
-          <option value="success">Success</option>
-          <option value="error">Error</option>
-          <option value="blocked">Blocked</option>
-        </select>
+        <Combobox
+          label="Status"
+          value={get("status")}
+          onChange={(v) => set("status", v)}
+          options={STATUS_OPTIONS}
+          allLabel="All statuses"
+          searchable={false}
+        />
       </Field>
       <Field label="Content rules">
-        <select className={FIELD} value={get("guardrail")} onChange={(e) => set("guardrail", e.target.value)}>
-          <option value="">All</option>
-          <option value="any">Matched a rule</option>
-          <option value="blocked">Blocked by a rule</option>
-          <option value="flagged">Flagged by a rule</option>
-          <option value="unchecked">Not fully checked</option>
-        </select>
+        <Combobox
+          label="Content rules"
+          value={get("guardrail")}
+          onChange={(v) => set("guardrail", v)}
+          options={RULE_OPTIONS}
+          allLabel="All requests"
+          searchable={false}
+        />
       </Field>
-      <Field label="From">
-        <input type="date" className={FIELD} value={get("start").slice(0, 10)} onChange={(e) => set("start", e.target.value)} />
-      </Field>
-      <Field label="To">
-        <input type="date" className={FIELD} value={get("end").slice(0, 10)} onChange={(e) => set("end", e.target.value)} />
-      </Field>
+      {/* From and To sit together, so the pair wraps to the next line as one and never leaves a lone date behind */}
+      <div role="group" aria-label="Date range" className="flex min-w-0 flex-col gap-1">
+        <span className="text-meta font-medium uppercase tracking-wide text-fg-muted">Date range</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input type="date" aria-label="From date" className={FIELD} value={get("start").slice(0, 10)} max={get("end").slice(0, 10) || undefined} onChange={(e) => set("start", e.target.value)} />
+          <span className="text-fg-subtle" aria-hidden="true">→</span>
+          <input type="date" aria-label="To date" className={FIELD} value={get("end").slice(0, 10)} min={get("start").slice(0, 10) || undefined} onChange={(e) => set("end", e.target.value)} />
+        </div>
+      </div>
       {hasFilters && (
         <Button variant="ghost" size="sm" className="ml-auto self-center" onClick={onClear}>
           Clear filters

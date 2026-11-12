@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RequestRow } from "../../lib/api";
 import { RowCost, StatusBadge } from "./parts";
@@ -30,8 +31,9 @@ describe("a blocked request (stopped before any provider call)", () => {
     expect(screen.getByText("No price yet")).toBeInTheDocument();
   });
 
-  it("can be filtered for", () => {
+  it("can be filtered for", async () => {
     render(<RequestFilters get={() => ""} set={vi.fn()} keys={[]} models={[]} hasFilters={false} onClear={vi.fn()} />);
+    await userEvent.click(screen.getByRole("combobox", { name: "Status: All statuses" }));
     const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toContain("Blocked");
   });

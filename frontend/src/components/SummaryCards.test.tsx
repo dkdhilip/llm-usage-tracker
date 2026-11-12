@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { SummaryCards, successRate } from "./SummaryCards";
+import { SummaryCards, successRate, trendOf } from "./SummaryCards";
 import type { UsageSummary } from "../lib/api";
 
 const base: UsageSummary = {
@@ -75,5 +75,22 @@ describe("SummaryCards: cost leads, and says what it does not know", () => {
   it("shows dashes, never zeros, when the data failed to load", () => {
     render(<SummaryCards data={null} loading={false} error />);
     expect(screen.getAllByText("—")).toHaveLength(4);
+  });
+});
+
+describe("how a figure moved against the period before", () => {
+  it("says up, down or no change in words, and nothing when there is nothing to compare with", () => {
+    expect(trendOf(112, 100)).toEqual({ dir: "up", text: "Up 12%" });
+    expect(trendOf(92, 100)).toEqual({ dir: "down", text: "Down 8%" });
+    expect(trendOf(100.2, 100)).toEqual({ dir: "flat", text: "No change" });
+    expect(trendOf(5000, 1)).toEqual({ dir: "up", text: "Up 999%+" });
+    expect(trendOf(10, 0)).toBeNull(); // a percentage of zero means nothing
+  });
+
+  it("shows the movement under requests and tokens, and leaves out a cost that is only partly priced", () => {
+    const before = { ...base, total_requests: 100, total_tokens: 1000, total_cost: 1, unpriced_requests: 0 };
+    render(<SummaryCards data={{ ...base, total_requests: 150, total_tokens: 500, unpriced_requests: 5 }} previous={{ summary: before, label: "previous 30 days" }} loading={false} />);
+    const lines = screen.getAllByTestId("trend").map((n) => n.textContent);
+    expect(lines).toEqual(["↑ Up 50% vs previous 30 days", "↓ Down 50% vs previous 30 days"]); // requests, tokens: no line for the cost
   });
 });

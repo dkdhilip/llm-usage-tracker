@@ -125,7 +125,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {announcement}
       </div>
       <header className="border-b border-line bg-surface">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <Logo />
             <span className="truncate font-semibold text-fg">{APP_NAME}</span>
@@ -163,7 +163,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
         {collapses && menuOpen && (
           <nav id="mobile-nav" aria-label="Main menu" className="border-t border-line md:hidden">
-            <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-2">
+            <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-2">
               {workspace && <div className="px-3 py-1 text-xs text-fg-muted">Workspace: {workspace.name}</div>}
               {links.map((l) => (
                 <NavLink key={l.to} to={l.to} className={(s) => `${navClass(s)} block py-2.5`}>
@@ -175,7 +175,7 @@ export function Layout({ children }: { children: ReactNode }) {
         )}
       </header>
 
-      <main id="main" ref={main} tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 focus:outline-none">
+      <main id="main" ref={main} tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 focus:outline-none">
         {children}
       </main>
     </div>

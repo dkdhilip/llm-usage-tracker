@@ -136,15 +136,15 @@ describe("charts have text alternatives", () => {
     expect(bars[0].textContent).toContain("750");
   });
 
-  it("shows the top 8 models and the rest on request", async () => {
+  it("shows the top 6 models and the rest on request", async () => {
     const models = Array.from({ length: 10 }, (_, i) => ({
       provider: "openai", model: `m${i}`, requests: 1, total_tokens: 1000 - i, cost: 0,
     }));
     render(<ThemeProvider><UsageByModelChart data={models} /></ThemeProvider>);
     const list = () => within(screen.getByRole("list", { name: "Tokens by model, most first" })).getAllByRole("listitem");
-    expect(list()).toHaveLength(8);
+    expect(list()).toHaveLength(6);
     await userEvent.click(screen.getByRole("button", { name: "Show all 10 models" }));
     expect(list()).toHaveLength(10);
-    expect(screen.getByRole("button", { name: "Show top 8" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Show top 6" })).toHaveAttribute("aria-expanded", "true");
   });
 });
