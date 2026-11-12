@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type GuardrailHit, type RequestRow } from "../../lib/api";
@@ -67,12 +68,15 @@ describe("requests a content rule matched", () => {
     expect(document.querySelectorAll("[data-rule-row]").length).toBe(2);
   });
 
-  it("has a Content rules filter that goes into the URL", () => {
+  it("has a Content rules filter that goes into the URL", async () => {
     const set = vi.fn();
     render(<RequestFilters get={(k) => (k === "guardrail" ? "flagged" : "")} set={set} keys={[]} models={[]} hasFilters onClear={() => {}} />);
-    const select = screen.getByLabelText("Content rules") as HTMLSelectElement;
-    expect(select.value).toBe("flagged");
-    expect([...select.options].map((o) => o.text)).toEqual(["All", "Matched a rule", "Blocked by a rule", "Flagged by a rule", "Not fully checked"]);
+    const box = screen.getByRole("combobox", { name: "Content rules: Flagged by a rule" }); // the current choice is on the control
+    await userEvent.click(box);
+    const names = screen.getAllByRole("option").map((o) => o.textContent);
+    expect(names).toEqual(["All requests", "Matched a rule", "Blocked by a rule", "Flagged by a rule", "Not fully checked"]);
+    await userEvent.click(screen.getByRole("option", { name: "Blocked by a rule" }));
+    expect(set).toHaveBeenCalledWith("guardrail", "blocked");
   });
 });
 

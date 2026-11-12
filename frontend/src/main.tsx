@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./lib/auth";
 import { ThemeProvider } from "./lib/theme";
+import "@fontsource-variable/inter/wght.css"; // Inter, self-hosted (no request to a font CDN)
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

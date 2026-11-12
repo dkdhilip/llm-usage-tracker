@@ -140,7 +140,7 @@ describe("Requests: the inspector beside the list", () => {
     expect(rowOf("key-2")).toHaveAttribute("aria-current", "true");
     await user.keyboard("k");
     expect(rowOf("key-1")).toHaveAttribute("aria-current", "true");
-    await user.click(screen.getByLabelText("From"));
+    await user.click(screen.getByLabelText("From date"));
     await user.keyboard("j");
     expect(rowOf("key-1")).toHaveAttribute("aria-current", "true"); // typed in a field: no shortcut
   });

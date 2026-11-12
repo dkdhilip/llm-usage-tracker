@@ -69,21 +69,23 @@ export function useTheme(): ThemeCtx {
   return ctx;
 }
 
-/** Recharts colours that adapt to the active theme. */
+/** Recharts colours that adapt to the active theme. `label` is the axis text: 4.9:1 on the white card and 7.5:1 on the
+ *  dark one (the same roles as --fg-subtle and --fg-muted in index.css). */
 export function chartTheme(isDark: boolean) {
   return {
-    grid: isDark ? "#1e293b" : "#eef2f7",
-    axis: isDark ? "#64748b" : "#94a3b8",
+    grid: isDark ? "#2c2c36" : "#ececef",
+    axis: isDark ? "#52525b" : "#c4c4cc",
+    label: isDark ? "#a1a1aa" : "#686872",
     tooltip: {
       contentStyle: {
-        background: isDark ? "#0f172a" : "#ffffff",
-        border: `1px solid ${isDark ? "#1e293b" : "#e2e8f0"}`,
+        background: isDark ? "#1d1d24" : "#ffffff",
+        border: `1px solid ${isDark ? "#2c2c36" : "#e4e4e7"}`,
         borderRadius: 8,
         fontSize: 12,
-        color: isDark ? "#e2e8f0" : "#1e293b",
+        color: isDark ? "#f4f4f6" : "#18181b",
       },
-      labelStyle: { color: isDark ? "#94a3b8" : "#64748b" },
-      itemStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
+      labelStyle: { color: isDark ? "#a1a1aa" : "#52525b" },
+      itemStyle: { color: isDark ? "#f4f4f6" : "#18181b" },
     },
   };
 }

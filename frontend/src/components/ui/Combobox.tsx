@@ -20,9 +20,11 @@ export const COMBO_TRIGGER =
 export const COMBO_ITEM =
   "flex min-h-8 cursor-pointer items-center justify-between gap-2 rounded px-2 py-1.5 text-sm text-fg aria-selected:bg-fill data-[disabled=true]:opacity-50";
 
-/** A searchable single-choice list in a popover (a long list such as 97 models). Type to filter, Arrow keys move,
- *  Enter chooses, Escape closes and returns focus to the button. The button is named "<label>: <current choice>", so
- *  its name contains the text a sighted user reads on it. */
+/** A single-choice list in a popover, in the app's own style (not the browser's native dropdown, which looks different
+ *  in every browser). Type to filter, Arrow keys move, Enter chooses, Escape closes and returns focus to the button.
+ *  The button is named "<label>: <current choice>", so its name contains the text a sighted user reads on it.
+ *  `searchable` (the default) shows a search box, for a long list such as 97 models; `searchable={false}` is for a
+ *  short list (a provider, a status): no box is drawn, but typing still jumps to a matching row. */
 export function Combobox({
   label,
   value,
@@ -30,6 +32,7 @@ export function Combobox({
   options,
   allLabel,
   searchPlaceholder,
+  searchable = true,
   disabled,
   className,
   children,
@@ -41,6 +44,8 @@ export function Combobox({
   /** The "no filter" row (value ""), for example "All models". */
   allLabel?: string;
   searchPlaceholder?: string;
+  /** Show the search box (default). Off for a short list. */
+  searchable?: boolean;
   disabled?: boolean;
   className?: string;
   /** Extra content above the list (the key picker puts its status filter here). */
@@ -64,13 +69,18 @@ export function Combobox({
         </button>
       </Popover.Trigger>
       <Popover.Portal container={pageContainer()}>
-        <Popover.Content align="start" sideOffset={4} onOpenAutoFocus={(e) => { e.preventDefault(); search.current?.focus(); }} className="z-50 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface p-1.5 shadow-lg focus:outline-none">
+        <Popover.Content align="start" sideOffset={4} onOpenAutoFocus={(e) => { e.preventDefault(); search.current?.focus(); }} className={cn("z-50 max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface-raised p-1.5 shadow-lg focus:outline-none", searchable ? "w-72" : "w-56")}>
           {children}
           <Command label={`Search ${label.toLowerCase()}`} className="flex flex-col">
-            <div className="mb-1 flex items-center gap-2 border-b border-line px-2">
-              <SearchIcon className="shrink-0 text-fg-subtle" />
-              <Command.Input ref={search} placeholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`} className="h-9 w-full bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none" />
-            </div>
+            {searchable ? (
+              <div className="mb-1 flex items-center gap-2 border-b border-line px-2">
+                <SearchIcon className="shrink-0 text-fg-subtle" />
+                <Command.Input ref={search} placeholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`} className="h-9 w-full bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none" />
+              </div>
+            ) : (
+              // still in the page (and focused) so the arrow keys and typing work, but not drawn
+              <Command.Input ref={search} aria-label={`Choose ${label.toLowerCase()}`} className="sr-only" />
+            )}
             <Command.List id={listId} className="max-h-64 overflow-y-auto">
               <Command.Empty className="px-2 py-3 text-sm text-fg-muted">No match</Command.Empty>
               {allLabel && (

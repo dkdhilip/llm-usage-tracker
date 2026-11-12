@@ -155,7 +155,7 @@ export function DayTooltip({
   const items = payload.filter((p) => p.value > 0).sort((a, b) => b.value - a.value);
   const total = items.reduce((a, p) => a + p.value, 0);
   return (
-    <div className="rounded-md border border-line bg-surface px-3 py-2 text-xs shadow-md">
+    <div className="rounded-md border border-line bg-surface-raised px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-medium text-fg">{dayLabel(label, true)}</div>
       {items.length === 0 ? (
         <div className="text-fg-subtle">No usage</div>
@@ -213,15 +213,14 @@ export function UsageOverTimeChart({ data, state = "ready" }: { data: Timeseries
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-            <div>
-              <div className="text-kpi font-semibold tabular-nums text-fg" data-testid="usage-total">
+            {/* The same total is in the cards above, so it is a caption here, not a second headline. */}
+            <div className="text-ui text-fg-muted">
+              <span className="font-semibold tabular-nums text-fg" data-testid="usage-total">
                 {formatMetric(metric, grand)}
-              </div>
-              <div className="text-xs text-fg-subtle">
-                {metric === "requests"
-                  ? `requests over ${span}`
-                  : `${unit} over ${span} · ${num(requests)} ${requests === 1 ? "request" : "requests"}`}
-              </div>
+              </span>{" "}
+              {metric === "requests"
+                ? `requests over ${span}`
+                : `${unit} over ${span} · ${num(requests)} ${requests === 1 ? "request" : "requests"}`}
             </div>
             <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" aria-label="Total per provider">
               {legend.map((e) => (
@@ -244,7 +243,7 @@ export function UsageOverTimeChart({ data, state = "ready" }: { data: Timeseries
             </ul>
           </div>
           {/* The drawing is described in words for a screen reader; the legend above already has the numbers. */}
-          <div className="h-64 w-full" role="img" aria-label={summary}>
+          <div className="h-72 w-full" role="img" aria-label={summary}>
             <div className="h-full w-full" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap="25%" accessibilityLayer={false}>
@@ -252,13 +251,13 @@ export function UsageOverTimeChart({ data, state = "ready" }: { data: Timeseries
                 <XAxis
                   dataKey="day"
                   tickFormatter={(d: string) => dayLabel(d)}
-                  tick={{ fontSize: 11 }}
+                  tick={{ fontSize: 11, fill: ct.label }}
                   stroke={ct.axis}
                   tickLine={false}
                   minTickGap={16}
                 />
                 <YAxis
-                  tick={{ fontSize: 11 }}
+                  tick={{ fontSize: 11, fill: ct.label }}
                   stroke={ct.axis}
                   tickLine={false}
                   axisLine={false}

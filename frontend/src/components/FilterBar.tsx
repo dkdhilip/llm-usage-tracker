@@ -105,21 +105,14 @@ export function FilterBar({
           </div>
         )}
 
-        <select
-          aria-label="Provider"
-          className={selectClass}
+        <Combobox
+          label="Provider"
           value={filters.provider}
-          onChange={(e) =>
-            onChange({ ...filters, provider: e.target.value, model: "" })
-          }
-        >
-          <option value="">All providers</option>
-          {providers.map((p) => (
-            <option key={p} value={p}>
-              {providerName(p)}
-            </option>
-          ))}
-        </select>
+          onChange={(provider) => onChange({ ...filters, provider, model: "" })}
+          options={providers.map((p) => ({ value: p, label: providerName(p) }))}
+          allLabel="All providers"
+          searchable={false}
+        />
 
         <Combobox
           label="Model"

@@ -57,3 +57,32 @@ export function describeRange(f: Filters): string {
   if (f.rangeDays > 0) return `Last ${f.rangeDays} days`;
   return "All time";
 }
+
+const DAY_MS = 86_400_000;
+
+/** The same filters for the period just before the chosen one, of the same length (for "vs the previous 30 days").
+ *  null for "All time", which has nothing before it. */
+export function previousQuery(f: Filters): { qs: string; label: string } | null {
+  let start: number;
+  let end: number;
+  let label: string;
+  if (f.start) {
+    start = Date.parse(f.start + "T00:00:00Z");
+    end = f.end ? Date.parse(f.end + "T00:00:00Z") + DAY_MS : Date.now();
+    label = "previous period";
+  } else if (f.rangeDays > 0) {
+    end = Date.now();
+    start = end - f.rangeDays * DAY_MS;
+    label = `previous ${f.rangeDays} days`;
+  } else {
+    return null;
+  }
+  if (!(end > start)) return null;
+  const p = new URLSearchParams();
+  p.set("start", new Date(start - (end - start)).toISOString());
+  p.set("end", new Date(start).toISOString()); // the end of a window is exclusive
+  if (f.provider) p.set("provider", f.provider);
+  if (f.model) p.set("model", f.model);
+  if (f.keyId) p.set("key_id", f.keyId);
+  return { qs: `?${p.toString()}`, label };
+}

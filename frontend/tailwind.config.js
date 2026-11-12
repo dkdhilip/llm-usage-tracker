@@ -1,3 +1,5 @@
+import defaultTheme from "tailwindcss/defaultTheme";
+
 /** @type {import('tailwindcss').Config} */
 const role = (name) => `rgb(var(--${name}) / <alpha-value>)`;
 
@@ -6,10 +8,13 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // Inter first (self-hosted, see main.tsx), then the system fonts if it has not loaded yet
+      fontFamily: { sans: ["Inter Variable", ...defaultTheme.fontFamily.sans] },
       colors: {
         // semantic tokens — values come from CSS vars in index.css (light + dark)
         surface: role("surface"),
         "surface-2": role("surface-2"),
+        "surface-raised": role("surface-raised"),
         fill: role("fill"),
         fg: role("fg"),
         "fg-muted": role("fg-muted"),
@@ -24,17 +29,18 @@ export default {
         warning: { fg: role("warning-fg"), soft: role("warning-soft"), line: role("warning-line") },
         danger: { fg: role("danger-fg"), soft: role("danger-soft"), line: role("danger-line") },
         info: { fg: role("info-fg"), soft: role("info-soft"), line: role("info-line") },
+        // blue-violet, anchored on #5B5BD6 (600). 600 carries white text at 5.4:1; 700 is its hover.
         brand: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
+          50: "#f5f5ff",
+          100: "#e8e9ff",
+          200: "#d3d5ff",
+          300: "#b1b4fb",
+          400: "#8f91f7",
+          500: "#6e6fe0",
+          600: "#5b5bd6",
+          700: "#4c4cc4",
+          800: "#3e3ea6",
+          900: "#2a2b72",
         },
       },
       // type scale. 11px (`meta`) is for uppercase labels and IDs only, always at AA contrast.
