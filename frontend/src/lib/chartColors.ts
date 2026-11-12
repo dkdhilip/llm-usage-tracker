@@ -1,13 +1,16 @@
-// One palette for every chart, so a provider has the same colour in the donut, the stacked area and the model bars.
-// Chosen to stay distinct from each other and readable on both the light and the dark card.
+// One palette for every chart, so a provider has the same colour in the bars, the stacked chart and the model list.
+// It is built on the Okabe-Ito colour-blind-safe set, with the lightest members darkened a little so each colour is at
+// least 3:1 against the white card and the dark card (WCAG 1.4.11). Every series also carries its name and its number in
+// text beside the colour, so colour is never the only thing telling two providers apart.
 export const PROVIDER_COLORS: Record<string, string> = {
-  openai: "#10a37f",
-  anthropic: "#d97757",
-  openrouter: "#c026d3", // not the brand indigo: indigo and Gemini blue were nearly indistinguishable for deuteranopia
-  gemini: "#3b82f6",
+  openai: "#009e73", // bluish green
+  anthropic: "#d55e00", // vermillion
+  gemini: "#0072b2", // blue
+  openrouter: "#cc79a7", // reddish purple
 };
 
-const FALLBACK = ["#14b8a6", "#f43f5e", "#eab308", "#8b5cf6", "#06b6d4", "#84cc16"];
+// For any other provider: a stable pick from these, chosen to stay apart from the four above and from each other.
+const FALLBACK = ["#7b61d9", "#c23b5a", "#8a8a96", "#a67c00"];
 
 /** The colour for a provider: its fixed brand-ish colour, or a stable pick from the fallback list. */
 export function providerColor(name: string): string {

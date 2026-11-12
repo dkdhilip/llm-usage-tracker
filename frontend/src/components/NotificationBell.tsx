@@ -130,7 +130,7 @@ export function NotificationBell() {
             align="end"
             sideOffset={6}
             aria-label="Content rule notifications"
-            className="z-50 w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface p-3 shadow-lg focus:outline-none"
+            className="z-50 w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface-raised p-3 shadow-lg focus:outline-none"
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-fg">Content rule matches</h2>

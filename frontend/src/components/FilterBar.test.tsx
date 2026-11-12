@@ -30,13 +30,13 @@ describe("FilterBar", () => {
         keys={[{ key_id: 1, label: "k", status: "active" }]}
       />,
     );
-    expect(screen.getByRole("combobox", { name: "Provider" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Provider: All providers" })).toBeTruthy();
     // each name contains what is shown on the control, so voice control and screen readers agree
     expect(screen.getByRole("combobox", { name: "Model: All models" })).toHaveTextContent("All models");
     expect(screen.getByRole("combobox", { name: "Key: All keys" })).toHaveTextContent("All keys");
   });
 
-  it("writes provider names as brands in the Provider dropdown", () => {
+  it("writes provider names as brands in the Provider dropdown", async () => {
     render(
       <FilterBar
         filters={defaultFilters}
@@ -45,6 +45,7 @@ describe("FilterBar", () => {
         keys={[]}
       />,
     );
+    await userEvent.click(screen.getByRole("combobox", { name: "Provider: All providers" }));
     const names = screen.getAllByRole("option").map((o) => o.textContent);
     expect(names).toContain("OpenAI");
     expect(names).toContain("OpenRouter");

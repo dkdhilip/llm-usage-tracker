@@ -9,7 +9,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { keyOptions, type KeyOption } from "../lib/keyOptions";
-import { defaultFilters, describeRange, toQuery, type Filters } from "../lib/filters";
+import { defaultFilters, describeRange, previousQuery, toQuery, type Filters } from "../lib/filters";
 import { num } from "../lib/format";
 import { FilterBar } from "../components/FilterBar";
 import { Button } from "../components/ui/Button";
@@ -28,6 +28,8 @@ export function Dashboard() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
+  // the period just before, for the "up / down vs previous" lines (optional: the page works without it)
+  const [previous, setPrevious] = useState<{ summary: UsageSummary; label: string } | null>(null);
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
   const [byKey, setByKey] = useState<ByKeyRow[]>([]);
   const [byModel, setByModel] = useState<ByModelRow[]>([]);
@@ -41,6 +43,7 @@ export function Dashboard() {
 
   const load = useCallback(() => {
     const qs = toQuery(filters);
+    const prev = previousQuery(filters);
     setLoading(true);
     setError(null);
     Promise.all([
@@ -48,9 +51,11 @@ export function Dashboard() {
       api.usageTimeseries(qs),
       api.usageByKey(qs),
       api.usageByModel(qs),
+      prev ? api.usageSummary(prev.qs).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([s, ts, bk, bm]) => {
+      .then(([s, ts, bk, bm, ps]) => {
         setSummary(s);
+        setPrevious(ps && prev ? { summary: ps, label: prev.label } : null);
         setTimeseries(ts);
         setByKey(bk);
         setByModel(bm);
@@ -125,14 +130,16 @@ export function Dashboard() {
         </InlineAlert>
       )}
 
-      <SummaryCards data={error ? null : summary} loading={loading} error={!!error} />
+      <SummaryCards data={error ? null : summary} previous={error ? null : previous} loading={loading} error={!!error} />
 
+      {/* The chart on the left; the two breakdowns stacked on the right, so neither column is left half empty. */}
       <div className="grid gap-4 lg:grid-cols-2">
         <UsageOverTimeChart data={timeseries} state={state} />
-        <UsageByProviderChart data={byModel} state={state} />
+        <div className="space-y-4">
+          <UsageByProviderChart data={byModel} state={state} />
+          <UsageByModelChart data={byModel} state={state} />
+        </div>
       </div>
-
-      <UsageByModelChart data={byModel} state={state} />
 
       <KeyUsageTable rows={byKey} statusOf={(id) => statusById.get(id) ?? "active"} state={state} />
     </div>

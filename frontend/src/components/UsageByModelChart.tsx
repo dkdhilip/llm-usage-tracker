@@ -7,7 +7,7 @@ import { providerColor } from "../lib/chartColors";
 import { providerName, tokens } from "../lib/format";
 
 /** How many models show before "Show all". */
-export const TOP_MODELS = 8;
+export const TOP_MODELS = 6;
 
 /** The models with the most tokens as bars, largest first. The full name is always in the page (truncated by width,
  *  with the whole name as a tooltip), and the provider is named in text as well as colour. */
@@ -69,7 +69,7 @@ export function UsageByModelChart({ data, state = "ready" }: { data: ByModelRow[
           {rows.length > TOP_MODELS && (
             <div className="mt-2">
               <Button variant="ghost" size="sm" aria-expanded={all} onClick={() => setAll((v) => !v)}>
-                {all ? "Show top 8" : `Show all ${rows.length} models`}
+                {all ? `Show top ${TOP_MODELS}` : `Show all ${rows.length} models`}
               </Button>
             </div>
           )}
