@@ -1,7 +1,8 @@
-"""SPAStaticFiles: client routes fall through to index.html, and no request can
-be served a file outside the static directory (path-traversal regression)."""
+"""SPAStaticFiles: client routes fall through to index.html, an unanswered API path is a 404 (never the HTML shell),
+and no request can be served a file outside the static directory (path-traversal regression)."""
 
 import pytest
+from fastapi import FastAPI
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
@@ -38,6 +39,33 @@ def test_client_routes_fall_back_to_index(spa):
         r = client.get(path)
         assert r.status_code == 200, path
         assert "SPA-SHELL" in r.text, path
+
+
+@pytest.mark.parametrize("path", ["/api/me", "/api/definitely/not/here", "/api", "/v1/models", "/v1", "/v1beta/nothing", "/api/"])
+def test_an_unanswered_api_path_is_a_404_not_the_app_shell(spa, path):
+    client, _ = spa
+    r = client.get(path)
+    assert r.status_code == 404, path
+    assert "SPA-SHELL" not in r.text, path
+
+
+@pytest.mark.parametrize("path", ["/apis", "/api-docs", "/v10", "/v1beta2/x", "/apiary/dashboard"])
+def test_only_the_exact_api_prefixes_are_reserved(spa, path):
+    client, _ = spa
+    r = client.get(path)
+    assert r.status_code == 200 and "SPA-SHELL" in r.text, path
+
+
+def test_the_404_is_json_like_every_other_api_error(tmp_path):
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text(INDEX_HTML)
+    app = FastAPI()
+    app.mount("/", SPAStaticFiles(directory=static, html=True), name="spa")
+    r = TestClient(app).get("/api/me")
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+    assert r.json() == {"detail": "Not Found"}
 
 
 def test_real_assets_are_served(spa):
