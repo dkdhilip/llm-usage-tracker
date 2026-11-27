@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { SummaryCards, successRate, trendOf } from "./SummaryCards";
+import { SummaryCards, blockedNote, successRate, trendOf } from "./SummaryCards";
 import type { UsageSummary } from "../lib/api";
 
 const base: UsageSummary = {
@@ -92,5 +92,30 @@ describe("how a figure moved against the period before", () => {
     render(<SummaryCards data={{ ...base, total_requests: 150, total_tokens: 500, unpriced_requests: 5 }} previous={{ summary: before, label: "previous 30 days" }} loading={false} />);
     const lines = screen.getAllByTestId("trend").map((n) => n.textContent);
     expect(lines).toEqual(["↑ Up 50% vs previous 30 days", "↓ Down 50% vs previous 30 days"]); // requests, tokens: no line for the cost
+  });
+});
+
+describe("SummaryCards: requests a content rule blocked", () => {
+  it("words the count, singular and plural, and says nothing when there are none", () => {
+    expect(blockedNote(undefined)).toBeNull();
+    expect(blockedNote(0)).toBeNull();
+    expect(blockedNote(1)).toBe("1 blocked by a content rule, not counted");
+    expect(blockedNote(1200)).toBe("1,200 blocked by content rules, not counted");
+  });
+
+  it("says how many were blocked under Requests, so the Requests page does not seem to disagree", () => {
+    render(<SummaryCards data={{ ...base, blocked_requests: 3 }} loading={false} />);
+    expect(screen.getByText("3 blocked by content rules, not counted")).toBeInTheDocument();
+    expect(screen.getByText("No errors")).toBeInTheDocument(); // the other line stays
+  });
+
+  it("shows it when every request in the range was blocked (no counted requests at all)", () => {
+    render(<SummaryCards data={{ ...base, total_requests: 0, total_tokens: 0, total_cost: 0, blocked_requests: 1 }} loading={false} />);
+    expect(screen.getByText("1 blocked by a content rule, not counted")).toBeInTheDocument();
+  });
+
+  it("adds nothing when nothing was blocked", () => {
+    render(<SummaryCards data={{ ...base, blocked_requests: 0 }} loading={false} />);
+    expect(screen.queryByText(/blocked by/)).toBeNull();
   });
 });
