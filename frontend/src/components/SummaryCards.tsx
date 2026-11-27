@@ -97,6 +97,13 @@ function CostStat({ data, trend }: { data: UsageSummary; trend?: ReactNode }) {
   );
 }
 
+/** Requests a content rule stopped before any provider call are not in these figures (they used no tokens and cost
+ *  nothing). The Requests page lists them, so the card says how many there were, or its list would seem to disagree. */
+export function blockedNote(n: number | undefined): string | null {
+  if (!n || n < 1) return null;
+  return `${num(n)} blocked by ${n === 1 ? "a content rule" : "content rules"}, not counted`;
+}
+
 /** The share of requests that did not fail, never rounded up to 100% while an error exists. */
 export function successRate(total: number, errors: number): string {
   if (total <= 0) return "—";
@@ -143,6 +150,13 @@ export function SummaryCards({
     );
   }
   const prev = previous?.summary;
+  const counted =
+    data.total_requests === 0
+      ? undefined
+      : data.errors > 0
+        ? `${num(data.errors)} error${data.errors === 1 ? "" : "s"} · ${successRate(data.total_requests, data.errors)} success`
+        : "No errors";
+  const blocked = blockedNote(data.blocked_requests);
   const move = (now: number, before: number | undefined) => {
     const v = before === undefined ? null : trendOf(now, before);
     return v && previous ? <Trend value={v} label={previous.label} /> : undefined;
@@ -157,11 +171,12 @@ export function SummaryCards({
         value={num(data.total_requests)}
         trend={move(data.total_requests, prev?.total_requests)}
         sub={
-          data.total_requests === 0
-            ? undefined
-            : data.errors > 0
-              ? `${num(data.errors)} error${data.errors === 1 ? "" : "s"} · ${successRate(data.total_requests, data.errors)} success`
-              : "No errors"
+          counted || blocked ? (
+            <>
+              {counted}
+              {blocked && <span className={cn("block", counted && "mt-0.5")}>{blocked}</span>}
+            </>
+          ) : undefined
         }
       />
       <Stat
