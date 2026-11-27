@@ -1,6 +1,8 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type RequestContent, type StoredImage } from "../../lib/api";
 import { CopyButton } from "../../components/ui/CopyButton";
+import { Mark } from "../workspace/guardrails/Snippet";
+import { findRanges, type MatchedWords, type Range } from "./matches";
 
 const SKIP_TEXT: Record<string, string> = {
   url_not_stored: "image given as a link (links are never downloaded or stored)",
@@ -122,16 +124,43 @@ export function Section({
   );
 }
 
-/** Long text in a box that scrolls and can be reached by keyboard (so a long prompt can be read without a mouse). */
-export function TextBlock({ label, text }: { label: string; text: string }) {
+/** `text` with the given ranges highlighted. */
+function Highlighted({ text, ranges }: { text: string; ranges: readonly Range[] }) {
+  const out: ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([a, b], i) => {
+    if (a > at) out.push(text.slice(at, a));
+    out.push(<Mark key={i}>{text.slice(a, b)}</Mark>);
+    at = b;
+  });
+  if (at < text.length) out.push(text.slice(at));
+  return <>{out}</>;
+}
+
+/** Long text in a box that scrolls and can be reached by keyboard (so a long prompt can be read without a mouse).
+ *  `words` are highlighted wherever they occur, and a long text scrolls to the first of them, so the admin sees the
+ *  sentence that set a content rule off without hunting for it. */
+export function TextBlock({ label, text, words }: { label: string; text: string; words?: readonly MatchedWords[] }) {
+  const box = useRef<HTMLPreElement>(null);
+  const ranges = useMemo(() => (words?.length ? findRanges(text, words) : []), [text, words]);
+  useEffect(() => {
+    const el = box.current;
+    const first = ranges.length ? el?.querySelector("mark") : null;
+    if (!el || !first) return;
+    const room = el.getBoundingClientRect();
+    const at = first.getBoundingClientRect();
+    // only when it is out of sight; put it in the middle of the box
+    if (at.top < room.top || at.bottom > room.bottom) el.scrollTop += at.top - room.top - (el.clientHeight - at.height) / 2;
+  }, [ranges]);
   return (
     <pre
+      ref={box}
       tabIndex={0}
       role="region"
       aria-label={label}
       className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-line bg-surface-2 p-3 font-mono text-[13px] leading-5 text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text"
     >
-      {text}
+      {ranges.length ? <Highlighted text={text} ranges={ranges} /> : text}
     </pre>
   );
 }
@@ -142,12 +171,15 @@ export function StoredContentSections({
   error,
   usageId,
   requestOnly,
+  words,
 }: {
   content: RequestContent | null;
   error: string | null;
   usageId: number;
   /** a blocked request never reached the provider: there is no response to show */
   requestOnly?: boolean;
+  /** the words a content rule matched in this request: highlighted in the prompt */
+  words?: readonly MatchedWords[];
 }) {
   if (error)
     return (
@@ -174,15 +206,17 @@ export function StoredContentSections({
   const { response } = content.content;
   const parts = promptParts(content);
   const reply = responseText(content);
+  const highlighted = !!words?.length && parts.some((p) => findRanges(p.text, words, 1).length > 0);
   return (
     <>
       {parts.length > 0 && (
         <Section title="Prompt" action={<CopyButton label="Copy prompt" what="Prompt" text={promptText(content)} />}>
+          {highlighted && <p className="mb-2 text-xs text-fg-muted">The words a content rule matched are highlighted.</p>}
           <div className="space-y-3">
             {parts.map((p, i) => (
               <div key={i}>
                 <div className="mb-1 text-xs font-medium capitalize text-fg-muted">{p.label}</div>
-                <TextBlock label={`Prompt: ${p.label}`} text={p.text} />
+                <TextBlock label={`Prompt: ${p.label}`} text={p.text} words={words} />
               </div>
             ))}
           </div>

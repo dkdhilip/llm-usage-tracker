@@ -72,6 +72,7 @@ For a **word or phrase** rule the snippet also keeps the matched words as they w
 at most 60 characters, between two control-character markers inside the encrypted value). They tell the admin nothing
 the rule's own text did not already, and the Requests inspector and the rule's "Try it" box highlight them in their
 context. The API returns the context with `[matched]` in place of the words and the words apart as `matched_text`.
+(The inspector goes further, in the browser only: see "What the admin sees" below.)
 **Pattern (regex) rules and the secret/PII detectors never keep the matched text**: their snippet shows `[matched]`
 (none at all for a detector, or when the matched text also appears in its own context). Hits saved before this change
 keep showing `[matched]`.
@@ -113,7 +114,23 @@ is not involved.
   showed (a match that arrives meanwhile stays unread). Read state is workspace-wide.
 - **Requests**: rows a rule blocked or flagged are tinted red and say why in words ("Blocked" + "Rule: x", "Flagged: x");
   "Not fully checked" (fail-open) is a neutral badge, not an alarm. A **Content rules** filter (`?guardrail=`) and an
-  inspector section (what happened, each matching rule, the redacted context, retention) complete it.
+  inspector section (what happened, each matching rule, the sentence it matched in, retention) complete it.
+
+### What the admin sees for a blocked or flagged prompt
+
+In the request inspector, for a word or phrase rule (the only kind that keeps the matched words):
+
+- The **Content rules** card shows **the whole sentence** the first match sits in, with the matched words highlighted
+  (a very long sentence is cut at a word, with an ellipsis, around the match).
+- The **Prompt** section shows the exact stored prompt with **every occurrence** of the matched words highlighted
+  (ignoring case; a line break or extra spaces count as the space between words; a whole-word rule highlights whole words
+  only), and scrolls a long prompt to the first one.
+
+Both are done in the browser from the stored prompt and the `matched_text` the API already returns: no new endpoint,
+nothing extra is stored. When the stored prompt is gone (expired, or not kept) or the words cannot be found in it, the card
+falls back to the short context the server kept (up to 20 characters either side). A **pattern** rule keeps no matched
+words, so its card shows `[matched]` in the short context and the prompt is not highlighted for it. A secret/PII detector
+keeps neither a context nor a prompt.
 
 ## Limits (`config.py`)
 
