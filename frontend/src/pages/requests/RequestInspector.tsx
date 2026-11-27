@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import { useMemo, type Ref } from "react";
 import type { RequestContent, RequestRow } from "../../lib/api";
 import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
@@ -8,7 +8,9 @@ import { cn } from "../../lib/cn";
 import { CopyButton } from "../../components/ui/CopyButton";
 import { Section, SectionLevel, StoredContentSections } from "./content";
 import { GuardrailSection } from "./GuardrailSection";
+import { matchedWords } from "./matches";
 import { ProviderDot, RowCost, StatusBadge, seconds } from "./parts";
+import { useGuardrailHits } from "./useGuardrailHits";
 
 const STEP = "aria-disabled:cursor-not-allowed aria-disabled:opacity-40";
 
@@ -116,11 +118,14 @@ export function RequestInspector({
   onNext: () => void;
   onClose: () => void;
 }) {
+  // what the content rules found, loaded once: the card below says it in words, the prompt highlights the same words
+  const hits = useGuardrailHits(row);
+  const words = useMemo(() => (hits.status === "ready" ? matchedWords(hits.hits) : []), [hits]);
   const body = (
     <>
-      {row.guardrail && <GuardrailSection row={row} />}
+      {row.guardrail && <GuardrailSection row={row} hits={hits} content={content} contentError={contentError} />}
       {row.has_content && (
-        <StoredContentSections content={content} error={contentError} usageId={row.id} requestOnly={row.status === "blocked"} />
+        <StoredContentSections content={content} error={contentError} usageId={row.id} requestOnly={row.status === "blocked"} words={words} />
       )}
       {/* The old LOG_BODIES previews: only shown when one actually exists (the flag is off in production). */}
       {(row.prompt_preview != null || row.response_preview != null) && (
