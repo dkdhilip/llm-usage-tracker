@@ -43,6 +43,8 @@
     "routeTitlesAndSkipLink",
     "reducedMotion",
     "comboboxKeyboard",
-    "reflowAt320And640"
+    "reflowAt320And640",
+    "requestsFitAtEveryWidth",
+    "notFoundPage"
   ]
 }

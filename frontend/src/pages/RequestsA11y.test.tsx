@@ -286,3 +286,22 @@ describe("Requests: full-screen detail on a narrower screen", () => {
     expect(within(screen.getByRole("region", { name: "Request details" })).getByText(/key-2/)).toBeInTheDocument();
   });
 });
+
+describe("Requests: the list column can shrink to the screen", () => {
+  // jsdom cannot measure a layout, so this pins the thing that decides it: a bare grid column is as wide as the widest
+  // row (a long model name that "truncate" is meant to cut), which scrolled the whole page sideways on a phone and a
+  // tablet. The browser audit (requestsFitAtEveryWidth) measures the real thing.
+  const columns = () => (screen.getByRole("table").closest(".grid") as HTMLElement).className;
+
+  it("keeps a shrinkable column with no request open, and beside the inspector", async () => {
+    vi.mocked(api.listRequests).mockResolvedValue(list([row({ id: 1, key_label: "key-1", model: "openrouter/anthropic/claude-sonnet-4.5" })]));
+    const user = userEvent.setup();
+    page();
+    const first = (await screen.findByText("key-1")).closest("tr")!;
+    expect(columns()).toContain("grid-cols-[minmax(0,1fr)]");
+    expect(columns()).not.toContain("460px");
+    await user.click(first);
+    await inspector();
+    expect(columns()).toContain("grid-cols-[minmax(0,1fr)_460px]");
+  });
+});

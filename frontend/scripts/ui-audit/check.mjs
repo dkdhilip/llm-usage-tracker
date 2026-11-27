@@ -1,6 +1,7 @@
 // UI regression gate. Runs against the local audit app (see README) and compares with thresholds.json.
-//   node scripts/ui-audit/check.mjs [--shots] [--quick]
-// --shots saves screenshots to scripts/ui-audit/out/shots; --quick runs the 1440 and 390 widths only.
+//   node scripts/ui-audit/check.mjs [--shots] [--quick] [--only=<checkName>]
+// --shots saves screenshots to scripts/ui-audit/out/shots; --quick runs the 1440 and 390 widths only; --only runs one
+// interaction check by name (no matrix, about a minute) while you work on it. Run the whole gate before you merge.
 import { chromium } from "playwright-core";
 import axe from "axe-core";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -12,6 +13,7 @@ const OUT = join(HERE, "out");
 const BASE = process.env.UI_AUDIT_BASE || `http://127.0.0.1:${process.env.PORT || 8765}`;
 const SHOTS = process.argv.includes("--shots");
 const QUICK = process.argv.includes("--quick");
+const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7);
 const creds = JSON.parse(readFileSync(join(OUT, "creds.json"), "utf-8"));
 const thresholds = JSON.parse(readFileSync(join(HERE, "thresholds.json"), "utf-8"));
 mkdirSync(join(OUT, "state"), { recursive: true });
@@ -91,7 +93,7 @@ const DARK = new Set(["login", "welcome", "dashboard", "requests", "playground",
 
 const results = { matrix: {}, checks: {} };
 // ================= matrix: overflow, axe, targets, names, small type
-for (const theme of ["light", "dark"]) {
+for (const theme of ONLY ? [] : ["light", "dark"]) {
   for (const w of WIDTHS) {
     if (theme === "dark" && ![1440, 390].includes(w)) continue;
     for (const pg of PAGES) {
@@ -113,7 +115,7 @@ for (const theme of ["light", "dark"]) {
 }
 
 // ================= interaction checks. Each is {pass, detail}
-const check = async (name, fn) => { try { results.checks[name] = await fn(); } catch (e) { results.checks[name] = { pass: false, detail: "error: " + String(e).slice(0, 140) }; } };
+const check = async (name, fn) => { if (ONLY && name !== ONLY) return; try { results.checks[name] = await fn(); } catch (e) { results.checks[name] = { pass: false, detail: "error: " + String(e).slice(0, 140) }; } };
 
 await check("keyboardTabStops", async () => {
   const out = {};
@@ -464,7 +466,9 @@ await check("noNativeConfirmDialogs", async () => {
 await check("dashboardErrorAnnounced", async () => {
   const ctx = await context("auditadmin", 1440); const page = await ctx.newPage();
   await page.route("**/api/usage/**", (r) => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "database unavailable" }) }));
-  await load(page, "/dashboard"); const a = await page.evaluate(() => !!document.querySelector('[role="alert"]'));
+  // Wait for the alert itself: how long the page takes to start fetching depends on the machine (a fixed wait made this
+  // pass or fail with the CPU load), and what matters is that the failure is announced, not how fast.
+  await page.goto("/dashboard"); const a = await page.locator('[role="alert"]').first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
   const wrongEmpty = await page.evaluate(() => /No usage in this range yet/.test(document.querySelector("main")?.innerText || ""));
   await ctx.close(); return { pass: a && !wrongEmpty, detail: `announced=${a} showsNoUsageDuringError=${wrongEmpty}` };
 });
@@ -525,6 +529,39 @@ await check("reflowAt320And640", async () => {
   const bad = Object.entries(out).filter(([, v]) => v > 0); return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(bad) : "no horizontal scroll" };
 });
 
+await check("requestsFitAtEveryWidth", async () => {
+  // The newest requests carry the longest names in the data (see seed_usage.py). From a small phone to a laptop the page
+  // must not scroll sideways, and no phone card (its status badge, its cost) may sit past the screen edge. A table row
+  // inside its own scroll box is allowed to be wider than the screen: only the page itself must not scroll.
+  const out = {};
+  for (const w of [320, 375, 414, 540, 768, 900, 1024]) {
+    const ctx = await context("auditadmin", w); const page = await ctx.newPage(); await load(page, "/requests", "[data-request-row]");
+    out[w] = await page.evaluate(() => {
+      const W = document.documentElement.clientWidth;
+      const rows = [...document.querySelectorAll("[data-request-row]")];
+      const past = rows.filter((r) => { if (r.closest('[class*="overflow-x-auto"]')) return false; const b = r.getBoundingClientRect(); return b.width > 0 && b.right > W + 0.5; }).length;
+      return { overflow: document.documentElement.scrollWidth - W, rowsPastEdge: past, rows: rows.length };
+    });
+    await ctx.close();
+  }
+  const bad = Object.entries(out).filter(([, v]) => v.overflow > 0 || v.rowsPastEdge > 0 || v.rows === 0);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `no sideways scroll and no row past the edge at ${Object.keys(out).join(", ")}px` };
+});
+
+await check("notFoundPage", async () => {
+  // An address with no page says so (one h1, a tab title, a way back), for a signed-in and a signed-out visitor, and stays
+  // on that address instead of quietly redirecting to the dashboard or to sign-in.
+  const out = {};
+  for (const [user, label] of [["auditadmin", "signedIn"], [null, "signedOut"]]) {
+    const ctx = await context(user, 1440); const page = await ctx.newPage(); await load(page, "/definitely/not/a/page", "h1");
+    const v = await axeRun(page);
+    out[label] = { path: new URL(page.url()).pathname, h1: (await page.locator("h1").allTextContents()).join("|"), title: await page.title(), axe: v.reduce((a, x) => a + x.n, 0), backLink: await page.getByRole("link", { name: "Go to the dashboard" }).count() };
+    await ctx.close();
+  }
+  const ok = Object.values(out).every((o) => o.path === "/definitely/not/a/page" && o.h1 === "Page not found" && o.title.startsWith("Page not found") && o.axe === 0 && o.backLink === 1);
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
 await browser.close();
 
 // ================= report and compare with thresholds.json
@@ -540,7 +577,7 @@ if (total.axe > thresholds.maxAxeViolationNodes) fails.push(`axe violation nodes
 if (total.unnamed > thresholds.maxUnnamedControls) fails.push(`unnamed controls ${total.unnamed} > ${thresholds.maxUnnamedControls}`);
 if (lowest && lowest[0] < thresholds.minControlBorderContrast) fails.push(`field border contrast ${lowest[0]}:1 < ${thresholds.minControlBorderContrast}:1 (${lowest[1]})`);
 for (const [pg, n] of Object.entries(smallBy)) { const max = thresholds.maxSmallTargets[pg] ?? thresholds.maxSmallTargets.default; if (n > max) fails.push(`targets under 24px on ${pg}: ${n} > ${max}`); }
-for (const name of thresholds.requiredChecks) if (!results.checks[name]?.pass) fails.push(`check "${name}" must pass: ${results.checks[name]?.detail}`);
+for (const name of ONLY ? [ONLY] : thresholds.requiredChecks) if (!results.checks[name]?.pass) fails.push(`check "${name}" must pass: ${results.checks[name]?.detail}`);
 
 console.log(`\nMATRIX (${rows.length} renders)  overflow max ${total.overflow}px | axe nodes ${total.axe} | unnamed controls ${total.unnamed}`);
 console.log("lowest text-field border contrast:", lowest ? `${lowest[0]}:1 on ${lowest[1]}` : "n/a");

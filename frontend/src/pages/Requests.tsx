@@ -260,7 +260,10 @@ export function Requests() {
         </InlineAlert>
       )}
 
-      <div className={cn("grid items-start gap-4", open && "grid-cols-[minmax(0,1fr)_460px]")} onKeyDown={onKeyDown}>
+      {/* The list column must be allowed to shrink to the screen (minmax(0, ...)), also while no request is open. A bare
+          grid sizes its one column to the widest row (a long model name that "truncate" is meant to cut), so the whole
+          page then scrolled sideways on a phone and a tablet and pushed the status badges off the edge. */}
+      <div className={cn("grid items-start gap-4", open ? "grid-cols-[minmax(0,1fr)_460px]" : "grid-cols-[minmax(0,1fr)]")} onKeyDown={onKeyDown}>
         <RequestList
           rows={rows}
           selectedId={open?.id ?? null}

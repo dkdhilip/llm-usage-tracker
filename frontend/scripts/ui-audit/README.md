@@ -13,6 +13,7 @@ Needs a local Postgres (`docker compose up -d db`) and Chrome. From `frontend/`:
 ../backend/.venv/Scripts/python scripts/ui-audit/ui_audit_env.py seed   # fake accounts, workspace, keys, usage, a few stored requests
 npm run ui-audit                  # 5 widths x pages x themes + interaction checks (a few minutes); `ui-audit:quick` = 1440 and 390 only
 node scripts/ui-audit/check.mjs --shots                                  # also save full-page screenshots to out/shots
+node scripts/ui-audit/check.mjs --only=requestsFitAtEveryWidth           # run one interaction check by name (about a minute); run the whole gate before merging
 ../backend/.venv/Scripts/python scripts/ui-audit/ui_audit_env.py down   # stop the app, drop the database, remove temp files
 ```
 

@@ -46,6 +46,24 @@ with SessionLocal() as db:
                 db.add(u)
                 db.flush()
                 u.ts = dt.datetime.now(dt.UTC) - dt.timedelta(days=day, hours=random.randint(0, 20), minutes=random.randint(0, 59))
+    # Two of the newest requests carry the longest names in the data (a long OpenRouter-style model slug, and the long
+    # key label). The Requests page loads the 50 newest, so these are always on screen: a list that cannot shrink to
+    # the screen (a status badge pushed off the edge, sideways scrolling) is then caught at every width.
+    for label, model, pi, po, mins in (
+        ("dhilip-openrouter", "openrouter/anthropic/claude-sonnet-4.5", 3.0, 15.0, 20),
+        ("marketing-analytics-batch-eu-west", "claude-haiku-4-5", 1.0, 5.0, 40),
+    ):
+        vk = db.scalar(select(VirtualKey).where(VirtualKey.label == label))
+        if vk is None:
+            continue
+        n += 1
+        pt, ct = 640, 210
+        u = UsageLog(key_id=vk.id, provider=PLAN[label][0], model=model, prompt_tokens=pt, completion_tokens=ct,
+                     total_tokens=pt + ct, cost=(pt * pi + ct * po) / 1e6, latency_ms=900, status="success",
+                     request_id=f"uiaudit-long-{n}")
+        db.add(u)
+        db.flush()
+        u.ts = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=mins)
     # A few requests stopped before any provider call (status "blocked": no tokens, no cost). They must appear on the
     # Requests page and change no dashboard number; the audit then covers their badge, cost cell and filter.
     blocked = 0
