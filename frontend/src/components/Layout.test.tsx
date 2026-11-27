@@ -95,3 +95,29 @@ describe("Layout navigation on a narrow screen", () => {
     expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["Get started", "Account"]);
   });
 });
+
+describe("Layout page titles", () => {
+  const titleAt = (path: string) => {
+    show(ADMIN, path);
+    return document.title;
+  };
+
+  it("names each page in the tab", () => {
+    expect(titleAt("/dashboard")).toBe("Dashboard · LLM Usage Tracker");
+    expect(titleAt("/requests")).toBe("Requests · LLM Usage Tracker");
+  });
+
+  it("still names the page when the address has a trailing slash or other capitals (the router accepts both)", () => {
+    expect(titleAt("/dashboard/")).toBe("Dashboard · LLM Usage Tracker");
+    expect(titleAt("/Requests")).toBe("Requests · LLM Usage Tracker");
+  });
+
+  it("says 'Page not found' for an address with no page", () => {
+    expect(titleAt("/no/such/page")).toBe("Page not found · LLM Usage Tracker");
+  });
+
+  it("keeps the plain app name for the addresses that redirect at once", () => {
+    expect(titleAt("/")).toBe("LLM Usage Tracker");
+    expect(titleAt("/admin")).toBe("LLM Usage Tracker");
+  });
+});

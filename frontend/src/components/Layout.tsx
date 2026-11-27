@@ -17,6 +17,10 @@ const PAGE_TITLES: Record<string, string> = {
   "/welcome": "Get started",
   "/styleguide": "Design system",
 };
+// These addresses send the visitor to another page at once, so they keep the plain app name. Any other address that has
+// no page of its own is the "not found" page (see pages/NotFound.tsx) and says so in the tab and to a screen reader.
+const REDIRECTS = new Set(["/", "/admin"]);
+const NOT_FOUND_TITLE = "Page not found";
 
 const linkBase = "px-3 py-1.5 rounded-md text-sm font-medium transition-colors";
 
@@ -89,7 +93,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
   // Every page has its own title (shown in the tab and read by a screen reader), and a route change is announced and
   // moves focus to the page, as a full page load would. The first render is left alone: the browser already did it.
-  const pageTitle = PAGE_TITLES[pathname];
+  // The router ignores a trailing slash and the case of a path, so the title lookup does too.
+  const route = pathname.replace(/\/+$/, "").toLowerCase() || "/";
+  const pageTitle = PAGE_TITLES[route] ?? (REDIRECTS.has(route) ? undefined : NOT_FOUND_TITLE);
   const main = useRef<HTMLElement>(null);
   const firstRoute = useRef(true);
   const [announcement, setAnnouncement] = useState("");

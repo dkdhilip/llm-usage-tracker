@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./lib/auth";
 import { Login } from "./pages/Login";
+import { NotFound } from "./pages/NotFound";
 import { Button } from "./components/ui/Button";
 import { InlineAlert } from "./components/ui/InlineAlert";
 
@@ -152,7 +153,7 @@ export default function App() {
           />
         )}
         <Route path="/admin" element={<Navigate to="/workspace" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
       )}

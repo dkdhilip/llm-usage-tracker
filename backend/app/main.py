@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,17 +36,33 @@ from app.routers import requests as requests_router
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+# The first path segments the API owns. An address under one of them that no route answered is a wrong URL, not a page of
+# the app: it gets a real 404 (JSON, like every other API error) rather than the HTML shell with status 200, which an SDK
+# or a script would try to read as JSON and fail on in a confusing way.
+API_PREFIXES = frozenset({"api", "v1", "v1beta"})
+
+
+def _is_api_path(path: str) -> bool:
+    """True for a path under an API prefix. StaticFiles hands over a path joined with the platform's own separator
+    (a backslash on Windows), so it is split with the platform's own rules, not on a slash."""
+    parts = PurePath(path.lstrip("/\\")).parts
+    return bool(parts) and parts[0] in API_PREFIXES
+
+
 class SPAStaticFiles(StaticFiles):
     """Serve the built SPA. Real files are resolved by StaticFiles, whose
     lookup enforces path containment (traversal attempts resolve outside the
     directory and 404). Any other unmatched path returns index.html so
-    client-side routes (/dashboard, /requests, ...) survive a refresh."""
+    client-side routes (/dashboard, /requests, ...) survive a refresh, except
+    under an API prefix, where a path no route answered is a plain 404."""
 
     async def get_response(self, path: str, scope: Scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code != 404:
+                raise
+            if _is_api_path(path):
                 raise
             return await super().get_response("index.html", scope)
 
